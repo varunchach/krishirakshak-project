@@ -12,14 +12,25 @@ import random
 import shutil
 from pathlib import Path
 
+import boto3
 import yaml
 from sklearn.model_selection import train_test_split
 
 # Paths
-RAW_DATA_DIR = Path("data/raw/plantvillage")
+S3_BUCKET = os.environ.get("S3_BUCKET", "krishirakshak-data-593755927741")
+S3_DATA_PREFIX = "data/raw/plantvillage"
+RAW_DATA_DIR = Path("/tmp/plantvillage")
 PROCESSED_DIR = Path("data/processed")
 TREATMENT_KB_PATH = Path("training/treatment_kb.json")
 CONFIG_PATH = Path("training/training_config.yaml")
+
+
+def sync_from_s3():
+    """Sync dataset from S3 to /tmp/plantvillage."""
+    print(f"Syncing dataset from s3://{S3_BUCKET}/{S3_DATA_PREFIX} ...")
+    os.makedirs(RAW_DATA_DIR, exist_ok=True)
+    os.system(f"aws s3 sync s3://{S3_BUCKET}/{S3_DATA_PREFIX} {RAW_DATA_DIR} --quiet")
+    print("Sync complete.\n")
 
 
 def load_config() -> dict:
@@ -202,10 +213,7 @@ def main():
 
     print(f"Loaded treatment KB: {len(treatment_kb)} diseases\n")
 
-    if not RAW_DATA_DIR.exists():
-        print(f"ERROR: Raw data not found at {RAW_DATA_DIR}")
-        print("Run: bash scripts/download_dataset.sh")
-        return
+    sync_from_s3()
 
     entries = build_dataset(RAW_DATA_DIR, treatment_kb)
     print(f"\nTotal entries: {len(entries)}\n")
