@@ -1,0 +1,73 @@
+# Monitoring & Alerting Configuration
+
+cloudwatch:
+  namespace: "KrishiRakshak"
+  region: "us-east-1"
+  log_group: "/krishirakshak/api"
+  log_retention_days: 30
+
+metrics:
+  custom:
+    - name: "InferenceLatencyMs"
+      unit: "Milliseconds"
+      dimensions: ["ModelVersion", "DiseaseClass"]
+    - name: "PredictionConfidence"
+      unit: "None"
+      dimensions: ["DiseaseClass"]
+    - name: "TranslationLatencyMs"
+      unit: "Milliseconds"
+      dimensions: ["TargetLanguage"]
+    - name: "TTSLatencyMs"
+      unit: "Milliseconds"
+      dimensions: ["TargetLanguage"]
+    - name: "FeedbackPositive"
+      unit: "Count"
+    - name: "FeedbackNegative"
+      unit: "Count"
+    - name: "RequestCount"
+      unit: "Count"
+      dimensions: ["Endpoint", "Language"]
+
+alarms:
+  high_error_rate:
+    metric: "5XXError"
+    threshold: 5  # percent
+    evaluation_periods: 3
+    period_seconds: 60
+    action: "sns_alert"
+
+  high_latency:
+    metric: "InferenceLatencyMs"
+    statistic: "p99"
+    threshold: 10000  # 10 seconds
+    evaluation_periods: 3
+    period_seconds: 60
+    action: "sns_alert"
+
+  low_confidence:
+    metric: "PredictionConfidence"
+    statistic: "Average"
+    threshold: 0.40
+    comparison: "LessThanThreshold"
+    evaluation_periods: 5
+    period_seconds: 300
+    action: "sns_alert"
+
+  billing:
+    threshold_usd: 50
+    action: "sns_alert"
+
+drift_detection:
+  enabled: true
+  baseline_stats_path: "s3://krishirakshak-models/baselines/image_stats.json"
+  check_interval_minutes: 60
+  metrics:
+    - "mean_brightness"
+    - "mean_image_size_kb"
+    - "aspect_ratio_distribution"
+  alert_threshold_std: 3.0  # Alert if metric deviates >3 std from baseline
+
+sns:
+  topic_name: "krishirakshak-alerts"
+  email_subscribers:
+    - "team@example.com"

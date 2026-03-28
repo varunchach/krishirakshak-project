@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Satej Raste/Documents/WindowsPowerShell/**)",
+      "Read(//c/Users/Satej Raste/Documents/PowerShell/**)",
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && python -m venv venv)",
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && source venv/Scripts/activate && pip install awscli --quiet)",
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && source venv/Scripts/activate && aws --version)",
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && source venv/Scripts/activate && python -m awscli --version)",
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && source venv/Scripts/activate && pip install -r requirements.txt --quiet 2>&1 | tail -5)",
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && source venv/Scripts/activate && pip install -r requirements.txt --quiet 2>&1 | tail -10)"
+    ]
+  }
+}

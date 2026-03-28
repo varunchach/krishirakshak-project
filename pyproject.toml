@@ -1,0 +1,24 @@
+[project]
+name = "krishirakshak"
+version = "1.0.0"
+description = "AI-Powered Crop Disease Diagnosis System"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+python_files = "test_*.py"
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
