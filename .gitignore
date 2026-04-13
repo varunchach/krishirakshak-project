@@ -42,3 +42,6 @@ Thumbs.db
 *.pt
 *.pth
 *.safetensors
+bge-m3-deploy/model_weights/onnx/
+efficientnet-deploy/model.tar.gz
+models_pkl/
