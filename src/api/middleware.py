@@ -11,7 +11,7 @@ from starlette.responses import Response
 logger = logging.getLogger(__name__)
 
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
+class LoggingMiddleware(BaseHTTPMiddleware):
     """Add unique request ID to every request."""
 
     async def dispatch(self, request: Request, call_next):

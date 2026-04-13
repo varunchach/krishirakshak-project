@@ -1,62 +1,58 @@
-"""KrishiRakshak API — FastAPI entry point."""
+"""
+main.py
+-------
+FastAPI entry point for KrishiRakshak.
+"""
 
 import logging
+import os
 
-import structlog
-import yaml
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import router
+from src.api.middleware import LoggingMiddleware
+from src.api.routes     import router
 
-# Structured logging
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ]
+logging.basicConfig(
+    level  =logging.INFO,
+    format ="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
-
-with open("configs/app_config.yaml") as f:
-    config = yaml.safe_load(f)
 
 app = FastAPI(
-    title=config["app"]["name"],
-    version=config["app"]["version"],
-    description=config["app"]["description"],
-    docs_url="/docs",
-    redoc_url="/redoc",
+    title      ="KrishiRakshak API",
+    version    ="1.0.0",
+    description="AI-powered crop disease diagnosis for Indian farmers",
+    docs_url   ="/docs",
+    redoc_url  ="/redoc",
 )
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config["server"]["cors_origins"],
+    allow_origins    =["*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods    =["*"],
+    allow_headers    =["*"],
 )
 
-# Routes
+app.add_middleware(LoggingMiddleware)
 app.include_router(router)
 
 
 @app.get("/")
 async def root():
     return {
-        "service": config["app"]["name"],
-        "version": config["app"]["version"],
-        "docs": "/docs",
+        "service": "KrishiRakshak",
+        "version": "1.0.0",
+        "docs"   : "/docs",
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(
         "src.api.main:app",
-        host=config["server"]["host"],
-        port=config["server"]["port"],
-        workers=config["server"]["workers"],
-        reload=config["app"]["debug"],
+        host   =os.getenv("HOST", "0.0.0.0"),
+        port   =int(os.getenv("PORT", 8000)),
+        workers=int(os.getenv("WORKERS", 1)),
+        reload =os.getenv("DEBUG", "false").lower() == "true",
     )

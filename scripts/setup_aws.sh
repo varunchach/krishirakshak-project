@@ -35,20 +35,9 @@ echo "  Go to: https://console.aws.amazon.com/bedrock/home#/modelaccess"
 echo "  Enable: Claude 3 Sonnet (or Amazon Titan Text)"
 echo ""
 
-# 3. Store Sarvam API key in SSM Parameter Store (free, encrypted)
-echo "Enter your Sarvam AI API key (from https://www.sarvam.ai/):"
-read -s SARVAM_KEY
-aws ssm put-parameter \
-  --name "/$PROJECT/sarvam-api-key" \
-  --value "$SARVAM_KEY" \
-  --type "SecureString" \
-  --overwrite \
-  --region "$REGION"
-echo "Sarvam API key stored in SSM Parameter Store"
-
-# 4. Create S3 buckets
+# 3. Create S3 buckets (names must match Terraform: krishirakshak-assets-dev, krishirakshak-models-dev)
 echo "Creating S3 buckets..."
-aws s3 mb "s3://$PROJECT-images-dev" --region "$REGION" 2>/dev/null || echo "Bucket exists"
+aws s3 mb "s3://$PROJECT-assets-dev" --region "$REGION" 2>/dev/null || echo "Bucket exists"
 aws s3 mb "s3://$PROJECT-models-dev" --region "$REGION" 2>/dev/null || echo "Bucket exists"
 
 # 5. Set billing alarm
@@ -67,4 +56,4 @@ aws cloudwatch put-metric-alarm \
 
 echo ""
 echo "=== Setup complete! ==="
-echo "Next: bash scripts/download_dataset.sh"
+echo "Next: cd infrastructure/terraform && terraform init && terraform apply"

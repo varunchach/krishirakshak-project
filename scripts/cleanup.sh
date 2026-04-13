@@ -1,42 +1,85 @@
 #!/bin/bash
-# Tear down all AWS resources to save credits
+# Tear down all KrishiRakshak AWS resources to stop billing.
+# Usage: bash scripts/cleanup.sh
 set -euo pipefail
 
 PROJECT="krishirakshak"
+REGION="us-east-1"
+SM_REGION="ap-south-1"
 
-echo "=== Cleaning up KrishiRakshak resources ==="
+echo "=== KrishiRakshak Cleanup ==="
 echo "WARNING: This will delete all resources. Press Ctrl+C to cancel."
 sleep 5
 
-# SageMaker
-echo "Deleting SageMaker endpoint..."
-aws sagemaker delete-endpoint --endpoint-name "$PROJECT-florence2" 2>/dev/null || true
-aws sagemaker delete-endpoint-config --endpoint-config-name "$PROJECT-florence2-config" 2>/dev/null || true
-aws sagemaker delete-model --model-name "$PROJECT-florence2-model" 2>/dev/null || true
+python -c "
+import boto3, time
 
-# S3 (empty then delete)
-echo "Emptying S3 buckets..."
-aws s3 rm "s3://$PROJECT-images-dev" --recursive 2>/dev/null || true
-aws s3 rm "s3://$PROJECT-models-dev" --recursive 2>/dev/null || true
-aws s3 rb "s3://$PROJECT-images-dev" 2>/dev/null || true
-aws s3 rb "s3://$PROJECT-models-dev" 2>/dev/null || true
+project   = '${PROJECT}'
+region    = '${REGION}'
+sm_region = '${SM_REGION}'
 
-# DynamoDB
-echo "Deleting DynamoDB table..."
-aws dynamodb delete-table --table-name "$PROJECT-predictions" 2>/dev/null || true
+ecs   = boto3.client('ecs',          region_name=region)
+elb   = boto3.client('elbv2',        region_name=region)
+ec2   = boto3.client('ec2',          region_name=region)
+apigw = boto3.client('apigatewayv2', region_name=region)
+ecr   = boto3.client('ecr',          region_name=region)
+ddb   = boto3.client('dynamodb',     region_name=region)
+s3    = boto3.client('s3',           region_name=region)
+logs  = boto3.client('logs',         region_name=region)
 
-# Secrets
-echo "Deleting secrets..."
-aws secretsmanager delete-secret --secret-id "$PROJECT/sarvam-api-key" --force-delete-without-recovery 2>/dev/null || true
+def safe(fn, *a, **kw):
+    try: fn(*a, **kw)
+    except Exception as e: print(f'  skip: {e}')
 
-# Terraform (if used)
-if [ -d "infrastructure/terraform/.terraform" ]; then
-    echo "Running terraform destroy..."
-    cd infrastructure/terraform
-    terraform destroy -auto-approve
-    cd ../..
-fi
+print('ECS...')
+safe(ecs.update_service, cluster=f'{project}-cluster', service=f'{project}-api', desiredCount=0)
+time.sleep(5)
+safe(ecs.delete_service, cluster=f'{project}-cluster', service=f'{project}-api', force=True)
+safe(ecs.delete_cluster, cluster=f'{project}-cluster')
 
-echo ""
-echo "=== Cleanup complete! ==="
-echo "Sarvam AI credits are NOT affected (they persist forever)."
+print('API Gateway...')
+for api in apigw.get_apis().get('Items', []):
+    if project in api['Name']:
+        safe(apigw.delete_api, ApiId=api['ApiId'])
+for link in apigw.get_vpc_links().get('Items', []):
+    if project in link['Name']:
+        safe(apigw.delete_vpc_link, VpcLinkId=link['VpcLinkId'])
+
+print('ALB...')
+for lb in elb.describe_load_balancers().get('LoadBalancers', []):
+    if project in lb['LoadBalancerName']:
+        for tg in elb.describe_target_groups(LoadBalancerArn=lb['LoadBalancerArn']).get('TargetGroups', []):
+            safe(elb.delete_target_group, TargetGroupArn=tg['TargetGroupArn'])
+        safe(elb.delete_load_balancer, LoadBalancerArn=lb['LoadBalancerArn'])
+
+print('Security groups...')
+for sg in ec2.describe_security_groups(Filters=[{'Name':'tag:Project','Values':[project]}]).get('SecurityGroups', []):
+    safe(ec2.delete_security_group, GroupId=sg['GroupId'])
+
+print('ECR...')
+safe(ecr.delete_repository, repositoryName=f'{project}-api', force=True)
+
+print('DynamoDB...')
+safe(ddb.delete_table, TableName=f'{project}-predictions-dev')
+
+print('S3...')
+try:
+    objs = s3.list_objects_v2(Bucket=f'{project}-assets-dev').get('Contents', [])
+    if objs:
+        s3.delete_objects(Bucket=f'{project}-assets-dev', Delete={'Objects': [{'Key': o['Key']} for o in objs]})
+    s3.delete_bucket(Bucket=f'{project}-assets-dev')
+except Exception as e:
+    print(f'  S3: {e}')
+
+print('Log groups...')
+for name in [f'/{project}/api', f'/{project}/api-gateway']:
+    safe(logs.delete_log_group, logGroupName=name)
+
+print()
+print('NOTE: SageMaker endpoints still running (billed per invocation only):')
+print('  krishirakshak-efficientnet-b3  (ap-south-1)')
+print('  bge-m3-krishirakshak           (ap-south-1)')
+print('Delete manually in AWS Console if done with the project.')
+print()
+print('=== Cleanup complete ===')
+"

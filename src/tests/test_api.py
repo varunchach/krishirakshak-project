@@ -1,11 +1,10 @@
-"""Tests for API endpoints."""
+"""Tests for FastAPI endpoints."""
 
 import io
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from src.api.main import app
-
 
 client = TestClient(app)
 
@@ -22,31 +21,22 @@ def test_health():
     resp = client.get("/v1/health")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "healthy"
-    assert "model_version" in data
-    assert "uptime_seconds" in data
-
-
-def test_languages():
-    resp = client.get("/v1/languages")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data["languages"]) > 0
-    codes = [l["code"] for l in data["languages"]]
-    assert "en-IN" in codes
-    assert "hi-IN" in codes
+    assert data["status"] in {"healthy", "degraded"}
+    assert "classifier" in data
+    assert "embeddings" in data
+    assert "faiss_index_size" in data
 
 
 def test_diagnose_no_file():
     resp = client.post("/v1/diagnose")
-    assert resp.status_code == 422  # Validation error
+    assert resp.status_code == 422
 
 
 def test_diagnose_empty_file():
     resp = client.post(
         "/v1/diagnose",
         files={"image": ("test.jpg", b"", "image/jpeg")},
-        data={"language": "en-IN"},
+        data={"session_id": "test"},
     )
     assert resp.status_code == 400
 
@@ -55,55 +45,81 @@ def test_diagnose_wrong_format():
     resp = client.post(
         "/v1/diagnose",
         files={"image": ("test.txt", b"hello", "text/plain")},
-        data={"language": "en-IN"},
+        data={"session_id": "test"},
     )
     assert resp.status_code == 400
 
 
-@patch("src.api.routes.get_pipeline")
-def test_diagnose_success(mock_pipeline, sample_image_bytes):
-    mock_result = {
-        "request_id": "test-123",
-        "disease": {
-            "name": "Tomato Early Blight",
-            "crop": "Tomato",
-            "severity": "moderate",
-            "confidence": 0.92,
-            "confidence_level": "high",
-        },
-        "treatment": {
-            "english": "Remove infected leaves.",
-            "translated": "संक्रमित पत्तियों को हटाएं।",
-            "language": "hi-IN",
-        },
-        "audio": None,
-        "metadata": {
-            "request_id": "test-123",
-            "model_version": "1.1.0",
-            "inference_time_ms": 500,
-            "total_time_ms": 1200,
-            "timestamp": "2026-03-28T10:00:00Z",
-        },
-    }
-    mock_pipeline.return_value.run.return_value = mock_result
-
-    resp = client.post(
-        "/v1/diagnose",
-        files={"image": ("leaf.jpg", sample_image_bytes, "image/jpeg")},
-        data={"language": "hi-IN"},
-    )
+@patch("src.api.routes._get_classifier")
+@patch("src.api.routes._get_agent")
+@patch("src.api.routes.text_to_speech", return_value=b"fake-mp3")
+@patch("src.api.routes._s3")
+def test_diagnose_low_conf(mock_s3, mock_tts, mock_agent, mock_clf, sample_image_bytes):
+    mock_clf.return_value = MagicMock()
+    with patch("src.api.routes.predict", return_value={
+        "disease": "Tomato Early Blight", "confidence": 25.0, "low_conf": True
+    }):
+        mock_s3.upload_audio.return_value = "https://s3.example.com/audio.mp3"
+        resp = client.post(
+            "/v1/diagnose",
+            files={"image": ("leaf.jpg", sample_image_bytes, "image/jpeg")},
+            data={"session_id": "s1"},
+        )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["disease"]["name"] == "Tomato Early Blight"
-    assert data["disease"]["confidence"] > 0.9
+    assert "Confidence is too low" in data["answer"] or "low" in data["answer"].lower()
+    assert data["request_id"]
 
 
-def test_feedback():
-    with patch("src.api.routes.get_feedback") as mock_fb:
-        mock_fb.return_value.submit_feedback = MagicMock()
+@patch("src.api.routes._get_classifier")
+@patch("src.api.routes._get_agent")
+@patch("src.api.routes.agent_run", return_value="Apply Mancozeb spray every 7 days.")
+@patch("src.api.routes.text_to_speech", return_value=b"fake-mp3")
+@patch("src.api.routes._s3")
+def test_diagnose_success(mock_s3, mock_tts, mock_run, mock_agent, mock_clf, sample_image_bytes):
+    mock_clf.return_value = MagicMock()
+    with patch("src.api.routes.predict", return_value={
+        "disease": "Tomato Early Blight", "confidence": 91.5, "low_conf": False
+    }):
+        mock_s3.upload_audio.return_value = "https://s3.example.com/audio.mp3"
+        resp = client.post(
+            "/v1/diagnose",
+            files={"image": ("leaf.jpg", sample_image_bytes, "image/jpeg")},
+            data={"session_id": "s1"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Tomato Early Blight" in data["answer"]
+    assert data["session_id"] == "s1"
+    assert data["request_id"]
+
+
+@patch("src.api.routes._get_agent")
+@patch("src.api.routes.agent_run", return_value="Apply Mancozeb spray.")
+@patch("src.api.routes.text_to_speech", return_value=b"fake-mp3")
+@patch("src.api.routes._s3")
+def test_query_endpoint(mock_s3, mock_tts, mock_run, mock_agent):
+    mock_s3.upload_audio.return_value = "https://s3.example.com/audio.mp3"
+    resp = client.post("/v1/query", json={
+        "query": "How to treat tomato blight?",
+        "session_id": "s2",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "answer" in data
+    assert data["session_id"] == "s2"
+    assert data["request_id"]
+
+
+def test_feedback_endpoint():
+    with patch("src.api.routes._feedback") as mock_fb:
+        mock_fb.submit_feedback = MagicMock()
         resp = client.post("/v1/feedback", json={
-            "request_id": "test-123",
+            "request_id": "req-123",
             "is_correct": True,
+            "comment": "Correct diagnosis",
         })
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "recorded"
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "recorded"
+    assert data["request_id"] == "req-123"

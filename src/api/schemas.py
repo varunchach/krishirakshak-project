@@ -1,77 +1,68 @@
-"""Pydantic request/response models for KrishiRakshak API."""
+"""
+schemas.py
+----------
+Pydantic request/response models for the KrishiRakshak API.
+"""
 
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class DiseaseInfo(BaseModel):
-    name: str
-    crop: str = ""
-    severity: str = ""
-    confidence: float = Field(ge=0, le=1)
-    confidence_level: str
+class QueryRequest(BaseModel):
+    query      : str           = Field(..., description="User query in Hindi or English")
+    session_id : str           = Field("default", description="Unique session ID per farmer")
 
 
-class TreatmentInfo(BaseModel):
-    english: str
-    translated: str = ""
-    language: str = "en-IN"
+class DiagnoseRequest(BaseModel):
+    image_path : str           = Field(..., description="S3 URI or local path to uploaded image")
+    session_id : str           = Field("default", description="Unique session ID per farmer")
+    query      : Optional[str] = Field(None, description="Optional follow-up question about the image")
 
 
-class AudioInfo(BaseModel):
-    base64: str
-    format: str = "wav"
-    sample_rate: int = 22050
+class IngestRequest(BaseModel):
+    pdf_path   : str           = Field(..., description="S3 URI or local path to PDF")
+    source_name: Optional[str] = Field(None, description="Human-readable document name")
 
 
-class MetadataInfo(BaseModel):
-    request_id: str
-    model_version: str
-    inference_time_ms: float
-    total_time_ms: float
-    timestamp: str
+class AgentResponse(BaseModel):
+    request_id : Optional[str]   = None
+    answer     : str
+    session_id : str
+    language   : str
+    audio_url  : Optional[str]   = None
+    latency_ms : Optional[float] = None
 
 
-class DiagnoseResponse(BaseModel):
-    request_id: str
-    disease: DiseaseInfo
-    treatment: TreatmentInfo
-    audio: AudioInfo | None = None
-    metadata: MetadataInfo
-
-
-class ErrorResponse(BaseModel):
-    request_id: str
-    error: str
-    message: str
+class IngestResponse(BaseModel):
+    chunks_added: int
+    source      : str
+    status      : str
 
 
 class FeedbackRequest(BaseModel):
-    request_id: str
-    is_correct: bool
-    actual_disease: str | None = None
-    comment: str | None = None
+    request_id    : str
+    is_correct    : bool
+    actual_disease: Optional[str] = None
+    comment       : Optional[str] = None
 
 
 class FeedbackResponse(BaseModel):
-    status: str = "recorded"
+    status    : str = "recorded"
     request_id: str
-    message: str = "Thank you for your feedback. This helps improve our system."
+    message   : str = "Thank you for your feedback."
+
+
+class DependencyStatus(BaseModel):
+    backend : str
+    endpoint: Optional[str] = None
+    region  : Optional[str] = None
+    status  : str
+    ready   : bool
 
 
 class HealthResponse(BaseModel):
-    status: str
-    model_version: str
-    sagemaker_endpoint: str
-    sarvam_api: str
-    uptime_seconds: int
-    timestamp: str
-
-
-class LanguageInfo(BaseModel):
-    code: str
-    name: str
-    tts_supported: bool
-
-
-class LanguagesResponse(BaseModel):
-    languages: list[LanguageInfo]
+    status          : str
+    classifier      : DependencyStatus
+    embeddings      : DependencyStatus
+    faiss_index_size: int
+    version         : str = "1.0.0"

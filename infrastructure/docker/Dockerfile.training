@@ -1,15 +1,26 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
-
-RUN apt-get update && apt-get install -y python3 python3-pip git && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Training deps (torch + torchvision + sklearn)
+RUN pip install --no-cache-dir \
+    torch>=2.3.0 \
+    torchvision>=0.18.0 \
+    Pillow>=10.4.0 \
+    timm>=1.0.8 \
+    scikit-learn>=1.5.0 \
+    matplotlib>=3.9.0 \
+    pandas>=2.2.0 \
+    numpy>=1.26.0 \
+    boto3>=1.35.0 \
+    kaggle>=1.6.17 \
+    pyyaml>=6.0.2
 
 COPY training/ training/
-COPY configs/ configs/
-COPY data/ data/
+COPY configs/  configs/
 
-CMD ["python3", "training/fine_tune_florence.py"]
+CMD ["python", "training/train_efficientnet.py"]

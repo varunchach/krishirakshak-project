@@ -17,7 +17,11 @@
       "Bash(python3 << 'PYEOF'\nimport json, sys\n\nwith open\\('C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project/KrishiRakshak_Demo.ipynb', 'r', encoding='utf-8'\\) as f:\n    nb = json.load\\(f\\)\ncells = nb['cells']\n\n# Save each cell to a temp file\nimport os\nos.makedirs\\('C:/tmp/nb_cells', exist_ok=True\\)\nfor i, cell in enumerate\\(cells\\):\n    src = ''.join\\(cell['source']\\)\n    with open\\(f'C:/tmp/nb_cells/cell_{i}_{cell[\"cell_type\"]}.txt', 'w', encoding='utf-8'\\) as out:\n        out.write\\(src\\)\nprint\\(f'Saved {len\\(cells\\)} cells to C:/tmp/nb_cells/'\\)\nPYEOF)",
       "Bash(python3 << 'PYEOF'\nimport json\n\nwith open\\('C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project/KrishiRakshak_Demo.ipynb', 'r', encoding='utf-8'\\) as f:\n    nb = json.load\\(f\\)\n\n# Print metadata for reference\nprint\\(json.dumps\\(nb.get\\('metadata', {}\\), indent=2\\)\\)\nprint\\('nbformat:', nb.get\\('nbformat'\\)\\)\nprint\\('nbformat_minor:', nb.get\\('nbformat_minor'\\)\\)\nPYEOF)",
       "Bash(python3 C:/tmp/build_simple_notebook.py 2>&1 | tail -20)",
-      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && python3 C:/tmp/build_nb.py)"
+      "Bash(cd \"C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project\" && python3 C:/tmp/build_nb.py)",
+      "Bash(python3 -c \"\nimport json\ntry:\n    with open\\('C:/Users/Satej Raste/Downloads/Masai_Learning_Material/krishirakshak-project/model_tuning.ipynb', encoding='utf-8'\\) as f:\n        nb = json.load\\(f\\)\n    print\\('exists, cells:', len\\(nb.get\\('cells',[]\\)\\)\\)\nexcept:\n    print\\('empty or missing'\\)\n\")",
+      "Bash(python -c ':*)",
+      "Bash(python -u -c ':*)",
+      "Bash(python _patch_cell.py)"
     ]
   }
 }

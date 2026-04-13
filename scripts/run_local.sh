@@ -10,9 +10,6 @@ python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" 2>/dev/null ||
     exit 1
 }
 
-# Export Sarvam key from env if not in Secrets Manager
-export SARVAM_API_KEY="${SARVAM_API_KEY:-}"
-
 # Start API server
 echo "Starting FastAPI server on http://localhost:8000"
 echo "Docs at http://localhost:8000/docs"

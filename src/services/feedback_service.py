@@ -1,22 +1,21 @@
 """Feedback and prediction logging service (DynamoDB)."""
 
 import logging
+import os
 from datetime import datetime, timezone
 
 import boto3
-import yaml
 
 logger = logging.getLogger(__name__)
+
+DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE", "krishirakshak-predictions-dev")
 
 
 class FeedbackService:
     """Log predictions and farmer feedback to DynamoDB."""
 
-    def __init__(self, config_path: str = "configs/app_config.yaml"):
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        self.table_name = config["storage"]["dynamodb_table"]
+    def __init__(self):
+        self.table_name = DYNAMODB_TABLE
         self.table = boto3.resource("dynamodb").Table(self.table_name)
 
     def log_prediction(self, request_id: str, image_key: str, disease: str,
@@ -25,15 +24,15 @@ class FeedbackService:
         """Log a prediction for later feedback matching."""
         try:
             self.table.put_item(Item={
-                "PK": f"REQUEST#{request_id}",
-                "SK": "PREDICTION",
-                "disease": disease,
-                "confidence": str(confidence),
-                "treatment_en": treatment[:1000],
-                "language": language,
-                "image_s3_key": image_key,
+                "PK"              : f"REQUEST#{request_id}",
+                "SK"              : "PREDICTION",
+                "disease"         : disease,
+                "confidence"      : str(confidence),
+                "treatment_en"    : treatment[:1000],
+                "language"        : language,
+                "image_s3_key"    : image_key,
                 "inference_time_ms": str(inference_time_ms),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp"       : datetime.now(timezone.utc).isoformat(),
             })
             logger.info(f"Logged prediction for {request_id}")
         except Exception as e:
@@ -46,12 +45,12 @@ class FeedbackService:
         """Record farmer feedback on a diagnosis."""
         try:
             self.table.put_item(Item={
-                "PK": f"REQUEST#{request_id}",
-                "SK": "FEEDBACK",
-                "is_correct": is_correct,
+                "PK"            : f"REQUEST#{request_id}",
+                "SK"            : "FEEDBACK",
+                "is_correct"    : is_correct,
                 "actual_disease": actual_disease or "",
-                "comment": comment or "",
-                "submitted_at": datetime.now(timezone.utc).isoformat(),
+                "comment"       : comment or "",
+                "submitted_at"  : datetime.now(timezone.utc).isoformat(),
             })
             logger.info(f"Recorded feedback for {request_id}: correct={is_correct}")
         except Exception as e:

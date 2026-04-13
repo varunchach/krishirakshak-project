@@ -1,81 +1,150 @@
-# 🌾 KrishiRakshak — AI-Powered Crop Disease Diagnosis
+# KrishiRakshak — Agentic AI for Indian Farmers
 
-> An end-to-end, production-grade AI system for diagnosing crop diseases from leaf images with regional Indian language support.
+Crop disease detection + Hindi/English document Q&A + audio responses.
 
-## What This Is
-KrishiRakshak uses a fine-tuned **Microsoft Florence-2** Vision-Language Model to diagnose 38 crop diseases from a single leaf photo and generate treatment recommendations in Hindi, Marathi, Tamil, Telugu, and other Indian languages — including voice output.
-
-## What Makes This Different
-- **Not a classifier.** Florence-2 is a VLM — it sees the image AND generates text in one pass.
-- **Not a tutorial.** Production architecture: Docker, Terraform, CI/CD, monitoring, feedback loops.
-- **Not English-only.** Sarvam AI for Indian language translation + text-to-speech.
-- **Not a notebook.** Deployed as a containerized FastAPI service on AWS.
+---
 
 ## Architecture
+
 ```
-Leaf Image → SageMaker (Florence-2) → Disease + Treatment (EN)
-                                        ↓
-                                   Sarvam Mayura → Translation (HI/MR/TA/TE)
-                                        ↓
-                                   Sarvam Bulbul → Voice Output (WAV)
+User (image / text / PDF)
+        ↓
+  Streamlit UI  (localhost:8501)
+        ↓
+  FastAPI (localhost:8000)
+        ↓
+  LangGraph ReAct Agent
+    ├── EfficientNet-B3   → SageMaker (ap-south-1)  krishirakshak-efficientnet-b3
+    ├── BGE-M3 Embeddings → SageMaker (ap-south-1)  bge-m3-krishirakshak
+    ├── Claude Sonnet 4.6 → Bedrock (us-east-1)
+    ├── FAISS + BM25 hybrid retrieval
+    └── Amazon Polly TTS
+        ↓
+  DynamoDB  → krishirakshak-predictions-dev
+  S3        → krishirakshak-assets-dev
 ```
 
-## Tech Stack
-| Component | Technology |
-|-----------|-----------|
-| Vision Model | Florence-2-base-ft (232M params, LoRA fine-tuned) |
-| Model Hosting | AWS SageMaker |
-| Translation | Sarvam Mayura API |
-| Text-to-Speech | Sarvam Bulbul API |
-| Backend | FastAPI on ECS Fargate |
-| Frontend | Streamlit (demo) |
-| IaC | Terraform |
-| CI/CD | GitHub Actions |
-| Monitoring | CloudWatch + custom metrics |
+---
 
-## Quick Start
+## What Is Done
 
-### Prerequisites
-- AWS account with $250 credits
-- Sarvam AI account (free ₹1,000 credits on signup)
-- Python 3.9+
-- Docker
-- Terraform
+### Models and AWS Resources
+- [x] EfficientNet-B3 trained on 5 diseases, deployed to SageMaker (`krishirakshak-efficientnet-b3`, ap-south-1, InService)
+- [x] BGE-M3 multilingual embeddings deployed to SageMaker (`bge-m3-krishirakshak`, ap-south-1, InService)
+- [x] S3 bucket created (`krishirakshak-assets-dev`) with 5 disease test images uploaded
+- [x] DynamoDB table created (`krishirakshak-predictions-dev`)
+- [x] ECR repository created (`593755927741.dkr.ecr.us-east-1.amazonaws.com/krishirakshak-api`)
+- [x] ECS cluster + service provisioned (`krishirakshak-cluster`)
+- [x] Internal ALB + API Gateway + VPC link provisioned
+- [x] API URL: `https://sgy86f7n6l.execute-api.us-east-1.amazonaws.com`
+- [x] IAM roles for ECS task + execution
 
-### Setup
-```bash
-# Clone and install
-git clone https://github.com/your-username/krishirakshak.git
-cd krishirakshak
+### Application Code
+- [x] FastAPI with `/v1/diagnose`, `/v1/query`, `/v1/ingest`, `/v1/feedback`, `/v1/health`
+- [x] EfficientNet-B3 dual backend (sagemaker / local)
+- [x] BGE-M3 embeddings via SageMaker
+- [x] FAISS + BM25 hybrid search with RRF
+- [x] LangGraph ReAct agent with MemorySaver (session-aware)
+- [x] Amazon Polly TTS (English: Joanna, Hindi: Aditi)
+- [x] Hindi/English language detection (Lingua)
+- [x] PDF ingestion + chunking
+- [x] DynamoDB prediction logging + feedback service
+- [x] S3 service for image + audio upload
+- [x] CloudWatch metrics + SNS alerts
+
+### Infrastructure Scripts
+- [x] `scripts/provision.py` — provisions all AWS infrastructure via boto3 (no Terraform)
+- [x] `scripts/deploy.ps1` — builds Docker image, pushes to ECR, redeploys ECS
+- [x] `scripts/ecr_auth.py` — writes ECR credentials to ~/.docker/config.json
+- [x] `scripts/cleanup.sh` — tears down all AWS resources
+- [x] `scripts/ingest_docs.sh` — ingests PDFs into FAISS via API
+- [x] `efficientnet-deploy/` — SageMaker deployment for EfficientNet-B3
+- [x] `Dockerfile` + `requirements.prod.txt` — production Docker image (~500MB, no torch)
+
+---
+
+## What Is Pending
+
+### Step 4 — Docker Build and ECS Deploy (BLOCKED — see issue below)
+- [ ] Build Docker image and push to ECR
+- [ ] ECS service pulls image and starts
+
+### Step 5 — Chat UI
+- [ ] Rewrite `frontend/streamlit_app.py` with `st.chat_message` session-aware interface
+- [ ] Image upload + text query + audio playback in one UI
+
+### Step 6 — PDF Ingestion
+- [ ] Run `bash scripts/ingest_docs.sh` against live API to populate FAISS index
+
+---
+
+## Known Issue — ECR Login Hangs in PowerShell
+
+**Symptom:** `python scripts\ecr_auth.py` hangs at `step2: calling ECR...` in PowerShell.
+
+**Not affected:** Git Bash — ECR works fine there (all services confirmed OK).
+
+**Root cause:** Unknown. STS, S3, ECS all respond in ~5s from PowerShell but ECR hangs indefinitely. Happens with both root credentials and IAM user credentials.
+
+**Things tried:**
+- `docker login --password-stdin` (hangs)
+- `docker login --password` directly (hangs)
+- Python Docker SDK `client.login()` (hangs)
+- Writing auth to `~/.docker/config.json` directly via Python (hangs at boto3 ECR call)
+- New IAM user with AdministratorAccess (still hangs)
+- Fresh PowerShell window (still hangs)
+
+**To try next session:**
+1. Try from WSL if installed
+2. Check if Windows Defender or antivirus is intercepting ECR HTTPS traffic
+3. Try disabling VPN if active
+4. Try from a different machine or terminal (VS Code terminal, cmd.exe)
+5. Test: `python -c "import boto3; boto3.client('ecr',region_name='us-east-1').get_authorization_token(); print('OK')"` from cmd.exe (not PowerShell)
+
+---
+
+## Running Locally (Without Docker)
+
+```powershell
 pip install -r requirements.txt
 
-# Download dataset
-bash scripts/download_dataset.sh
+$env:CLASSIFIER_BACKEND            = "sagemaker"
+$env:CLASSIFIER_SAGEMAKER_REGION   = "ap-south-1"
+$env:CLASSIFIER_SAGEMAKER_ENDPOINT = "krishirakshak-efficientnet-b3"
+$env:SAGEMAKER_REGION              = "ap-south-1"
+$env:SAGEMAKER_ENDPOINT            = "bge-m3-krishirakshak"
+$env:S3_BUCKET                     = "krishirakshak-assets-dev"
+$env:DYNAMODB_TABLE                = "krishirakshak-predictions-dev"
+$env:AWS_DEFAULT_REGION            = "us-east-1"
 
-# Configure AWS
-aws configure
-bash scripts/setup_aws.sh
-
-# Fine-tune model
-python training/prepare_dataset.py
-python training/fine_tune_florence.py
-
-# Deploy
-bash scripts/deploy.sh
-
-# Run demo
-streamlit run frontend/streamlit_app.py
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## Cost
-Total demo cost: ~$20-40 out of $250 budget.
+API docs: http://localhost:8000/docs
+Streamlit UI: http://localhost:8501
 
-## Documentation
-- [Architecture Decisions](docs/ARCHITECTURE.md)
-- [Model Selection](docs/MODELS.md)
-- [Production Readiness](docs/PRODUCTION.md)
-- [API Specification](docs/API_SPEC.md)
-- [Demo Script](docs/DEMO_SCRIPT.md)
+---
 
-## License
-MIT
+## Supported Diseases
+
+| Disease | Crop |
+|---|---|
+| Tomato Early Blight | Tomato |
+| Tomato Late Blight | Tomato |
+| Potato Late Blight | Potato |
+| Tomato Leaf Mold | Tomato |
+| Corn Common Rust | Corn |
+
+---
+
+## Key Config
+
+| Variable | Value |
+|---|---|
+| `CLASSIFIER_BACKEND` | `sagemaker` (prod) / `local` (dev) |
+| `CLASSIFIER_SAGEMAKER_ENDPOINT` | `krishirakshak-efficientnet-b3` |
+| `SAGEMAKER_ENDPOINT` | `bge-m3-krishirakshak` |
+| `S3_BUCKET` | `krishirakshak-assets-dev` |
+| `DYNAMODB_TABLE` | `krishirakshak-predictions-dev` |
+| `AWS_DEFAULT_REGION` | `us-east-1` |
+| `SAGEMAKER_REGION` | `ap-south-1` |

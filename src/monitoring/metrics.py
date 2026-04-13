@@ -1,9 +1,9 @@
 """Custom CloudWatch metrics for KrishiRakshak."""
 
 import logging
+import os
 
 import boto3
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +11,10 @@ logger = logging.getLogger(__name__)
 class MetricsPublisher:
     """Publish custom metrics to CloudWatch."""
 
-    def __init__(self, config_path: str = "configs/monitoring_config.yaml"):
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        self.namespace = config["cloudwatch"]["namespace"]
-        self.client = boto3.client("cloudwatch", region_name=config["cloudwatch"]["region"])
+    def __init__(self):
+        self.namespace = os.getenv("CLOUDWATCH_NAMESPACE", "KrishiRakshak")
+        region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+        self.client = boto3.client("cloudwatch", region_name=region)
 
     def put_metric(self, name: str, value: float, unit: str = "None", dimensions: dict | None = None):
         try:

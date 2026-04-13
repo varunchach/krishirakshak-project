@@ -1,0 +1,181 @@
+{
+  "Tomato Early Blight": {
+    "severity": "moderate",
+    "crops_affected": ["tomato", "potato"],
+    "symptoms": [
+      "Dark brown circular spots with concentric rings on older leaves",
+      "Yellowing around lesions (chlorosis)",
+      "Lesions enlarge and may merge, causing leaf drop",
+      "Stem lesions appear as dark, sunken cankers"
+    ],
+    "cause": "Fungal pathogen Alternaria solani; favored by warm humid weather (24-29°C) and leaf wetness",
+    "treatment": [
+      "Remove and destroy infected lower leaves immediately",
+      "Apply Mancozeb 75WP @ 2.5 g/L water as protectant spray",
+      "Apply Azoxystrobin 23SC @ 1 mL/L water for curative action",
+      "Alternate between Mancozeb and Azoxystrobin to prevent resistance",
+      "Spray at 7-10 day intervals during disease pressure"
+    ],
+    "pesticide": {
+      "name": "Mancozeb 75% WP",
+      "brand_india": "Dithane M-45 (Dow AgroSciences) / Indofil M-45",
+      "dose": "2.5 g per litre of water",
+      "frequency": "Every 7-10 days",
+      "pre_harvest_interval_days": 7
+    },
+    "organic_alternative": "Copper oxychloride 50WP @ 3 g/L; Trichoderma viride @ 5 g/L as soil drench",
+    "prevention": [
+      "Use certified disease-free seeds or resistant varieties (Pusa Ruby, Arka Vikas)",
+      "Maintain 60 cm row spacing for air circulation",
+      "Avoid overhead irrigation; use drip if possible",
+      "Rotate crops — avoid tomato/potato in same field for 2 years",
+      "Apply balanced NPK; excess nitrogen increases susceptibility"
+    ],
+    "icar_reference": "ICAR-IARI Technical Bulletin on Tomato Disease Management"
+  },
+
+  "Tomato Late Blight": {
+    "severity": "severe",
+    "crops_affected": ["tomato", "potato"],
+    "symptoms": [
+      "Water-soaked pale green or grey-green patches on leaves",
+      "White cottony mold on leaf underside in humid conditions",
+      "Lesions turn dark brown to black and spread rapidly",
+      "Fruit develops large greasy brown patches; becomes inedible",
+      "Entire plant can collapse within days under cool wet conditions"
+    ],
+    "cause": "Oomycete Phytophthora infestans; favored by cool temperatures (10-25°C) and high humidity >90%",
+    "treatment": [
+      "Act immediately — Late Blight spreads extremely fast",
+      "Remove and bag infected plant parts; do NOT compost",
+      "Apply Cymoxanil + Mancozeb (Curzate M8) @ 3 g/L as first response",
+      "Follow up with Metalaxyl + Mancozeb (Ridomil Gold) @ 2 g/L",
+      "Spray every 5-7 days under high disease pressure",
+      "Ensure complete leaf coverage including undersides"
+    ],
+    "pesticide": {
+      "name": "Cymoxanil 8% + Mancozeb 64% WP",
+      "brand_india": "Curzate M8 (Dupont/Corteva) / Blitox 50 for copper-based option",
+      "dose": "3 g per litre of water",
+      "frequency": "Every 5-7 days; preventive sprays before disease onset in cool wet seasons",
+      "pre_harvest_interval_days": 7
+    },
+    "organic_alternative": "Copper hydroxide 77WP @ 3 g/L; avoid in metallic sprayers",
+    "prevention": [
+      "Plant resistant varieties (Arka Rakshak, Pusa Hybrid-2 in Karnataka/Maharashtra)",
+      "Apply prophylactic Bordeaux mixture (1%) spray at transplanting",
+      "Avoid planting in low-lying fields with poor drainage",
+      "Never irrigate in evening; ensure leaves dry before night",
+      "Scout fields twice weekly during monsoon / cool season"
+    ],
+    "icar_reference": "ICAR-NRC Tomato Advisory on Late Blight Management"
+  },
+
+  "Potato Late Blight": {
+    "severity": "severe",
+    "crops_affected": ["potato"],
+    "symptoms": [
+      "Irregular water-soaked lesions on leaves turning brown-black",
+      "White sporulating growth on leaf undersides in damp mornings",
+      "Dark brown lesions on stems causing collapse",
+      "Tubers develop reddish-brown rot that penetrates flesh",
+      "Infected tubers emit foul odour in storage"
+    ],
+    "cause": "Phytophthora infestans; same pathogen as Tomato Late Blight but adapted to potato; spreads via wind-borne spores",
+    "treatment": [
+      "Destroy haulms (vines) 10-14 days before harvest to prevent tuber infection",
+      "Apply Propamocarb + Fenamidone (Previcur Energy) @ 2 mL/L for systemic action",
+      "Mancozeb 75WP @ 2 g/L as protective spray before disease onset",
+      "Chlorothalonil 75WP @ 2 g/L for contact activity",
+      "Spray calendar: every 7 days in dry weather, every 5 days in wet/cool weather"
+    ],
+    "pesticide": {
+      "name": "Propamocarb 66.2% + Fenamidone (or) Metalaxyl-M + Mancozeb",
+      "brand_india": "Previcur Energy (Bayer) / Ridomil Gold MZ (Syngenta)",
+      "dose": "2 mL or 2.5 g per litre of water depending on formulation",
+      "frequency": "Every 7 days preventively; every 5 days under disease pressure",
+      "pre_harvest_interval_days": 10
+    },
+    "organic_alternative": "Bordeaux mixture 1% (100g CuSO4 + 100g lime in 10L water); Trichoderma harzianum soil application",
+    "prevention": [
+      "Use certified disease-free seed tubers from CPRI-certified sources",
+      "Grow resistant varieties: Kufri Girdhari, Kufri Jyoti, Kufri Bahar",
+      "Plant on well-drained ridges; avoid waterlogging",
+      "Do not store diseased tubers — sort carefully at harvest",
+      "Treat seed tubers with Mancozeb 0.2% before planting"
+    ],
+    "icar_reference": "CPRI (Central Potato Research Institute) Advisory on Late Blight"
+  },
+
+  "Tomato Leaf Mold": {
+    "severity": "moderate",
+    "crops_affected": ["tomato"],
+    "symptoms": [
+      "Pale greenish-yellow spots on upper leaf surface",
+      "Olive-green to brown velvety mold on leaf undersides",
+      "Affected leaves curl upward and eventually drop",
+      "Severe infections reduce photosynthesis and fruit set",
+      "Mainly affects greenhouse and protected cultivation"
+    ],
+    "cause": "Fungal pathogen Passalora fulva (formerly Fulvia fulva / Cladosporium fulvum); favored by high humidity (>85%) and 22-25°C",
+    "treatment": [
+      "Improve ventilation in greenhouse or poly-house immediately",
+      "Remove severely infected leaves and dispose away from field",
+      "Apply Chlorothalonil 75WP @ 2 g/L for surface protection",
+      "Apply Difenoconazole 25EC @ 0.5 mL/L for systemic control",
+      "Spray every 10-14 days; avoid wetting foliage in evenings"
+    ],
+    "pesticide": {
+      "name": "Difenoconazole 25% EC",
+      "brand_india": "Score (Syngenta) / Folicur (Bayer) for triazole group",
+      "dose": "0.5 mL per litre of water",
+      "frequency": "Every 10-14 days",
+      "pre_harvest_interval_days": 5
+    },
+    "organic_alternative": "Neem oil 1500 ppm @ 3 mL/L; Bacillus subtilis-based bioagent @ 3 g/L",
+    "prevention": [
+      "Use resistant varieties: Solan Lalima, Arka Abha (resistant to most races of P. fulva)",
+      "Maintain relative humidity below 80% in protected structures",
+      "Space plants adequately (60×45 cm); prune lower leaves",
+      "Avoid overhead irrigation; use drip or furrow",
+      "Sanitize greenhouse between crop cycles with 1% bleach solution"
+    ],
+    "icar_reference": "ICAR-IIHR Technical Bulletin on Protected Cultivation of Tomato"
+  },
+
+  "Corn Common Rust": {
+    "severity": "moderate",
+    "crops_affected": ["maize", "corn"],
+    "symptoms": [
+      "Small, circular to elongated brick-red powdery pustules on both leaf surfaces",
+      "Pustules rupture to release cinnamon-brown urediniospores",
+      "Severe infection: leaves turn yellow and dry prematurely",
+      "Husks and stalks may also be affected in heavy infections",
+      "Yield loss due to reduced photosynthesis and premature senescence"
+    ],
+    "cause": "Fungal pathogen Puccinia sorghi; spreads via airborne urediniospores; favored by cool temperatures (16-23°C) and dew/leaf wetness",
+    "treatment": [
+      "Scout fields from V4 stage onward during cool-damp weather",
+      "Apply Propiconazole 25EC @ 1 mL/L at first appearance of pustules",
+      "Mancozeb 75WP @ 2.5 g/L as protective spray before infection",
+      "Tebuconazole 25.9EC @ 1 mL/L for systemic curative action",
+      "One to two sprays are usually sufficient if applied early"
+    ],
+    "pesticide": {
+      "name": "Propiconazole 25% EC",
+      "brand_india": "Tilt (Syngenta) / Bumper (Makhteshim-Agan)",
+      "dose": "1 mL per litre of water",
+      "frequency": "At first sign of disease; repeat in 14 days if needed",
+      "pre_harvest_interval_days": 14
+    },
+    "organic_alternative": "Sulfur 80WP @ 3 g/L spray; avoid above 35°C as phytotoxic",
+    "prevention": [
+      "Plant resistant hybrids: DHM-117, PEHM-5, NK6240 (check local KVK recommendations)",
+      "Early planting avoids peak rust season in most zones",
+      "Balanced nutrition — avoid excess nitrogen which increases susceptibility",
+      "Crop rotation with non-grass crops reduces inoculum buildup",
+      "Destroy crop debris after harvest to reduce spore carryover"
+    ],
+    "icar_reference": "ICAR-IIMR (Indian Institute of Maize Research) Advisory on Maize Diseases"
+  }
+}

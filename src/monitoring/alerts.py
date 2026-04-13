@@ -2,9 +2,9 @@
 
 import json
 import logging
+import os
 
 import boto3
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -12,12 +12,9 @@ logger = logging.getLogger(__name__)
 class AlertService:
     """Send alerts via SNS for operational issues."""
 
-    def __init__(self, config_path: str = "configs/monitoring_config.yaml"):
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        self.topic_name = config["sns"]["topic_name"]
-        self.region = config["cloudwatch"]["region"]
+    def __init__(self):
+        self.topic_name = os.getenv("SNS_TOPIC_NAME", "krishirakshak-alerts")
+        self.region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         self.client = boto3.client("sns", region_name=self.region)
         self._topic_arn = None
 

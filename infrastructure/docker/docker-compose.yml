@@ -8,18 +8,29 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - SARVAM_API_KEY=${SARVAM_API_KEY}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - S3_BUCKET=${S3_BUCKET:-krishirakshak-assets-dev}
+      - FAISS_S3_BUCKET=${FAISS_S3_BUCKET:-krishirakshak-assets-dev}
+      - FAISS_S3_KEY=${FAISS_S3_KEY:-faiss_index/store.pkl}
+      - DYNAMODB_TABLE=${DYNAMODB_TABLE:-krishirakshak-predictions-dev}
+      - CLASSIFIER_BACKEND=${CLASSIFIER_BACKEND:-local}
+      - CLASSIFIER_SAGEMAKER_REGION=${CLASSIFIER_SAGEMAKER_REGION:-ap-south-1}
+      - CLASSIFIER_SAGEMAKER_ENDPOINT=${CLASSIFIER_SAGEMAKER_ENDPOINT:-krishirakshak-efficientnet-b3}
+      - CLASSIFIER_MODEL_PATH=${CLASSIFIER_MODEL_PATH:-models_pkl/best_model.pth}
+      - SAGEMAKER_REGION=${SAGEMAKER_REGION:-ap-south-1}
+      - SAGEMAKER_ENDPOINT=${SAGEMAKER_ENDPOINT:-bge-m3-krishirakshak}
+      - DEBUG=${DEBUG:-false}
     volumes:
-      - ../../configs:/app/configs
-      - ../../training/treatment_kb.json:/app/training/treatment_kb.json
+      - ../../models_pkl:/app/models_pkl:ro
+      - ../../configs:/app/configs:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
+    restart: unless-stopped
 
   dynamodb-local:
     image: amazon/dynamodb-local:latest
