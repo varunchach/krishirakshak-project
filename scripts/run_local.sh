@@ -14,7 +14,7 @@ python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" 2>/dev/null ||
 echo "Starting FastAPI server on http://localhost:8000"
 echo "Docs at http://localhost:8000/docs"
 echo ""
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload &
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir src &
 API_PID=$!
 
 sleep 2

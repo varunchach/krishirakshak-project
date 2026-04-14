@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field
 
 
 class QueryRequest(BaseModel):
-    query      : str           = Field(..., description="User query in Hindi or English")
-    session_id : str           = Field("default", description="Unique session ID per farmer")
+    query          : str  = Field(..., description="User query in Hindi or English")
+    session_id     : str  = Field("default", description="Unique session ID per farmer")
+    generate_audio : bool = Field(False, description="Set True to get audio response")
 
 
 class DiagnoseRequest(BaseModel):

@@ -49,15 +49,21 @@ def _get_local_ml_modules():
     return torch, nn, models, transforms
 
 
+_preprocess = None
+
+
 def _build_preprocess():
-    _, _, _, transforms = _get_local_ml_modules()
-    return transforms.Compose(
-        [
-            transforms.Resize((300, 300)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ]
-    )
+    global _preprocess
+    if _preprocess is None:
+        _, _, _, transforms = _get_local_ml_modules()
+        _preprocess = transforms.Compose(
+            [
+                transforms.Resize((300, 300)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ]
+        )
+    return _preprocess
 
 
 def _build_model():

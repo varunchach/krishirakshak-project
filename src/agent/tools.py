@@ -126,11 +126,11 @@ def audio_generation_tool(text: str, language: str) -> str:
 
 
 # ── Tool registry for LangGraph ───────────────────────────────────────────────
+# rag_generator_tool removed — agent (Claude) writes the final answer itself.
+# Keeping it caused an extra Claude call inside an already-running Claude call.
 ALL_TOOLS = [
     image_diagnosis_tool,
     retriever_tool,
     web_search_tool,
     direct_context_tool,
-    rag_generator_tool,
-    audio_generation_tool,
 ]

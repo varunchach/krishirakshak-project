@@ -30,7 +30,11 @@ print(base64.b64decode(auth).decode().split(':')[1])
 ")
 echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-# 2. Build image
+# 2. Bundle FAISS index into image (load from disk, not S3 at runtime)
+echo "==> Fetching FAISS index from S3..."
+python scripts/fetch_index.py
+
+# 3. Build image
 echo "==> Building Docker image..."
 docker build -t "${ECR_REPO}:${IMAGE_TAG}" -t "${ECR_REPO}:latest" .
 

@@ -42,6 +42,9 @@ Thumbs.db
 *.pt
 *.pth
 *.safetensors
+
+# FAISS index — fetched from S3 at build time via scripts/fetch_index.py
+faiss_index/
 bge-m3-deploy/model_weights/onnx/
 efficientnet-deploy/model.tar.gz
 models_pkl/

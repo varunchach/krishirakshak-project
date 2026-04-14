@@ -21,7 +21,7 @@ import boto3
 logger = logging.getLogger(__name__)
 
 BEDROCK_REGION    = "us-east-1"
-INFERENCE_PROFILE = "us.anthropic.claude-sonnet-4-6-20251001-v1:0"
+INFERENCE_PROFILE = "us.anthropic.claude-sonnet-4-6"
 
 SYSTEM_PROMPT = """You are KrishiRakshak, an agricultural expert helping Indian farmers diagnose and treat crop diseases.
 
@@ -81,19 +81,15 @@ class RAGGenerator:
             f"Answer in the same language as the question. Plain prose only."
         )
 
-        body = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens"       : max_tokens or self.max_tokens,
-            "temperature"      : self.temperature,
-            "system"           : SYSTEM_PROMPT,
-            "messages"         : [{"role": "user", "content": user_message}],
-        }
-
         start = time.monotonic()
         try:
-            resp    = self.client.invoke_model(modelId=self.model_id, body=json.dumps(body))
-            result  = json.loads(resp["Body"].read())
-            answer  = result["content"][0]["text"].strip()
+            resp   = self.client.converse(
+                modelId=self.model_id,
+                system=[{"text": SYSTEM_PROMPT}],
+                messages=[{"role": "user", "content": [{"text": user_message}]}],
+                inferenceConfig={"maxTokens": max_tokens or self.max_tokens, "temperature": self.temperature},
+            )
+            answer = resp["output"]["message"]["content"][0]["text"].strip()
             latency = (time.monotonic() - start) * 1000
             logger.info(f"Generated {len(answer)} chars in {latency:.0f}ms")
             return {
@@ -117,6 +113,9 @@ class RAGGenerator:
 # Module-level singleton — initialized on first import
 _generator: Optional[RAGGenerator] = None
 
+# Simple in-memory response cache — keyed by query (lowercased, stripped)
+_cache: dict = {}
+
 
 def get_generator() -> RAGGenerator:
     global _generator
@@ -127,4 +126,36 @@ def get_generator() -> RAGGenerator:
 
 def generate(query: str, chunks: List[Dict[str, Any]]) -> str:
     """Convenience function — returns answer string directly."""
-    return get_generator().generate(query, chunks)["answer"]
+    key = query.strip().lower()
+    if key in _cache:
+        logger.info(f"Cache hit for query: {key[:60]}")
+        return _cache[key]
+    answer = get_generator().generate(query, chunks)["answer"]
+    _cache[key] = answer
+    return answer
+
+
+def generate_direct(query: str, raw_text: str) -> str:
+    """
+    Answer query using full document text — no retrieval needed.
+    Used for small documents that fit within Claude's context window.
+    """
+    gen = get_generator()
+    user_message = (
+        f"Question: {query}\n\n"
+        f"Full document context:\n{raw_text[:60000]}\n\n"
+        f"Answer in the same language as the question. Plain prose only."
+    )
+    try:
+        resp   = gen.client.converse(
+            modelId=gen.model_id,
+            system=[{"text": SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": [{"text": user_message}]}],
+            inferenceConfig={"maxTokens": 300, "temperature": 0.1},
+        )
+        answer = resp["output"]["message"]["content"][0]["text"].strip()
+        logger.info(f"generate_direct: {len(answer)} chars (direct context, no retrieval)")
+        return answer
+    except Exception as e:
+        logger.error(f"generate_direct failed: {e}")
+        return "Unable to generate advice. Please consult your local Krishi Vigyan Kendra."

@@ -18,6 +18,10 @@ COPY src/ ./src/
 COPY scripts/start.sh ./start.sh
 RUN chmod +x start.sh
 
+# Bundle FAISS index so startup never downloads from S3
+# Run `python scripts/fetch_index.py` before docker build
+COPY faiss_index/ ./faiss_index/
+
 EXPOSE 8000
 
 ENTRYPOINT ["./start.sh"]

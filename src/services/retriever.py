@@ -144,25 +144,91 @@ class VectorStore:
         logger.info(f"Index loaded from s3://{bucket}/{key} ({len(self.chunks)} chunks)")
 
 
+# ── Raw document store (for small docs — no FAISS needed) ─────────────────────
+
+class RawDocStore:
+    """Stores full text of small documents for direct context passing to LLM."""
+
+    def __init__(self):
+        self.docs: Dict[str, str] = {}  # source → full text
+
+    def add(self, source: str, text: str) -> None:
+        self.docs[source] = text
+        logger.info(f"RawDocStore: stored '{source}' ({len(text)} chars)")
+
+    def get_all_text(self) -> str:
+        """Concatenate all stored documents."""
+        return "\n\n---\n\n".join(self.docs.values())
+
+    def is_empty(self) -> bool:
+        return len(self.docs) == 0
+
+    def save_to_s3(self, bucket: str, key: str = "faiss_index/raw_docs.json") -> None:
+        boto3.client("s3").put_object(
+            Bucket=bucket, Key=key, Body=json.dumps(self.docs).encode()
+        )
+        logger.info(f"RawDocStore saved to s3://{bucket}/{key}")
+
+    def load_from_s3(self, bucket: str, key: str = "faiss_index/raw_docs.json") -> None:
+        obj = boto3.client("s3").get_object(Bucket=bucket, Key=key)
+        self.docs = json.loads(obj["Body"].read())
+        logger.info(f"RawDocStore loaded {len(self.docs)} docs from s3://{bucket}/{key}")
+
+
 # ── Module-level singleton ────────────────────────────────────────────────────
 _store: Optional[VectorStore] = None
+_raw_store: Optional[RawDocStore] = None
+
+
+def get_raw_store() -> RawDocStore:
+    global _raw_store
+    if _raw_store is None:
+        _raw_store = RawDocStore()
+        bucket = os.getenv("FAISS_S3_BUCKET")
+        if bucket:
+            try:
+                _raw_store.load_from_s3(bucket)
+            except Exception as e:
+                logger.warning(f"Could not load RawDocStore from S3 ({e}) — starting empty")
+    return _raw_store
+
+
+_LOCAL_INDEX_PATH = os.getenv("FAISS_LOCAL_PATH", "faiss_index/store.pkl")
 
 
 def get_store() -> VectorStore:
     """
     Returns the singleton VectorStore.
-    On first call, attempts to load a pre-built index from S3
-    if FAISS_S3_BUCKET and FAISS_S3_KEY env vars are set.
+    Load priority:
+      1. Local disk (faiss_index/store.pkl) — baked into Docker image, instant load
+      2. S3 — fallback for local dev when index not bundled
     """
     global _store
     if _store is None:
         _store = VectorStore()
-        bucket = os.getenv("FAISS_S3_BUCKET")
-        key    = os.getenv("FAISS_S3_KEY", "faiss_index/store.pkl")
-        if bucket:
+        if os.path.exists(_LOCAL_INDEX_PATH):
             try:
-                _store.load_from_s3(bucket, key)
-                logger.info(f"FAISS index loaded from s3://{bucket}/{key}")
+                with open(_LOCAL_INDEX_PATH, "rb") as f:
+                    data = pickle.load(f)
+                _store.chunks = data["chunks"]
+                _store._dim   = data["dim"]
+                if data["faiss_bytes"]:
+                    arr = np.frombuffer(data["faiss_bytes"], dtype=np.uint8)
+                    _store.faiss_index = faiss.deserialize_index(arr)
+                tokenized  = [c["text"].lower().split() for c in _store.chunks]
+                _store.bm25 = BM25Okapi(tokenized)
+                logger.info(f"FAISS index loaded from local disk ({len(_store.chunks)} chunks)")
             except Exception as e:
-                logger.warning(f"Could not load FAISS index from S3 ({e}) — starting empty")
+                logger.warning(f"Local index load failed ({e}) — falling back to S3")
+                _store = VectorStore()
+
+        if _store.faiss_index is None:
+            bucket = os.getenv("FAISS_S3_BUCKET")
+            key    = os.getenv("FAISS_S3_KEY", "faiss_index/store.pkl")
+            if bucket:
+                try:
+                    _store.load_from_s3(bucket, key)
+                    logger.info(f"FAISS index loaded from s3://{bucket}/{key}")
+                except Exception as e:
+                    logger.warning(f"Could not load FAISS index from S3 ({e}) — starting empty")
     return _store
