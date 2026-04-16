@@ -441,13 +441,20 @@ async def ingest(
                 raw_store.save_to_s3(bucket)
             except Exception as e:
                 logger.warning(f"Could not persist RawDocStore to S3: {e}")
-        logger.info(f"Small doc '{source}' ({len(text)} chars) → direct context store")
+        logger.info(
+            f"Ingest complete [{source}] | strategy=direct_context | "
+            f"chars={len(text)} | chunks=0 | embeddings=skipped (doc fits in LLM context)"
+        )
         return IngestResponse(chunks_added=0, source=source, status="direct_context")
     else:
         # Large doc — chunk + embed into FAISS
         chunks = chunk_text(text, source=source)
+        logger.info(f"Ingest [{source}] | chunking complete | chunks={len(chunks)}")
         get_store().add_chunks(chunks)
-        logger.info(f"Large doc '{source}' ({len(text)} chars) → FAISS ({len(chunks)} chunks)")
+        logger.info(
+            f"Ingest complete [{source}] | strategy=faiss+bm25 | "
+            f"chars={len(text)} | chunks={len(chunks)} | embeddings=sagemaker bge-m3"
+        )
         return IngestResponse(chunks_added=len(chunks), source=source, status="success")
 
 

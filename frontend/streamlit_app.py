@@ -214,20 +214,32 @@ with st.sidebar:
     with st.expander("Upload PDF Document"):
         pdf = st.file_uploader("PDF", type=["pdf"], label_visibility="collapsed")
         if pdf and st.button("Ingest Document", use_container_width=True):
-            with st.spinner("Processing..."):
-                try:
-                    r = requests.post(
-                        f"{API_URL}/ingest",
-                        files={"pdf": (pdf.name, pdf.getvalue(), "application/pdf")},
-                        data={"source": pdf.name},
-                        timeout=300,
-                    )
-                    if r.status_code == 200:
-                        st.success(f"{r.json()['chunks_added']} chunks added")
+            with st.spinner("Processing document..."):
+                pdf_bytes = pdf.getvalue()
+                r = None
+                for attempt in range(3):
+                    try:
+                        r = requests.post(
+                            f"{API_URL}/ingest",
+                            files={"pdf": (pdf.name, pdf_bytes, "application/pdf")},
+                            data={"source": pdf.name},
+                            timeout=300,
+                        )
+                        if r.status_code != 503:
+                            break
+                        import time as _time; _time.sleep(3)
+                    except Exception:
+                        import time as _time; _time.sleep(3)
+                if r is not None and r.status_code == 200:
+                    d = r.json()
+                    if d.get("status") == "direct_context":
+                        st.success(f"Document ready — full text loaded into context")
                     else:
-                        st.error(f"Error {r.status_code}")
-                except Exception as e:
-                    st.error(str(e))
+                        st.success(f"Document ready — {d['chunks_added']} chunks embedded into knowledge base")
+                elif r is not None:
+                    st.error(f"Ingest failed (status {r.status_code}) — please try again")
+                else:
+                    st.error("Could not reach API — please try again")
 
     with st.expander("Diagnose Crop Disease"):
         leaf_image = st.file_uploader("Leaf image", type=["jpg", "jpeg", "png", "webp"], label_visibility="collapsed")
