@@ -280,6 +280,19 @@ async def query(req: QueryRequest, request: Request):
         answer    = _generate_direct(req.query, full_text)
         chunks    = [{"chunk": full_text[:2000], "score": 1.0}]  # synthetic chunk for eval
         logger.info("Query served via direct context (small doc)")
+
+        # If Claude couldn't find the answer in the doc, fall back to ReAct agent (web search)
+        _not_found_signals = ("not mentioned", "not found", "no information", "don't have",
+                              "does not contain", "cannot find", "not available", "not provided")
+        if any(s in answer.lower() for s in _not_found_signals):
+            logger.info("Direct context answered 'not found' — falling back to ReAct agent (web search)")
+            web_answer, chunks = agent_run(
+                user_input=req.query,
+                session_id=req.session_id,
+                agent=_get_agent(),
+            )
+            answer = f"The ingested document did not contain this information. Based on web sources:\n\n{web_answer}"
+            logger.info(f"Fallback ReAct agent returned {len(chunks)} chunks")
     else:
         # ReAct agent path — retriever → web search fallback → generate
         answer, chunks = agent_run(
