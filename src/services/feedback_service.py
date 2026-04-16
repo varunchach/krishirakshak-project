@@ -16,7 +16,16 @@ class FeedbackService:
 
     def __init__(self):
         self.table_name = DYNAMODB_TABLE
-        self.table = boto3.resource("dynamodb").Table(self.table_name)
+        self._table = None  # lazy — connect on first use, not at import time
+
+    @property
+    def table(self):
+        if self._table is None:
+            self._table = boto3.resource(
+                "dynamodb",
+                region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            ).Table(self.table_name)
+        return self._table
 
     def log_prediction(self, request_id: str, image_key: str, disease: str,
                        confidence: float, treatment: str, language: str,
