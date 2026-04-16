@@ -16,7 +16,7 @@ import boto3
 from botocore.exceptions import ClientError
 from pathlib import Path
 
-BUCKET = os.getenv("FAISS_S3_BUCKET", "krishirakshak-assets")
+BUCKET = os.getenv("FAISS_S3_BUCKET", "krishirakshak-assets-dev")
 KEY    = os.getenv("FAISS_S3_KEY",    "faiss_index/store.pkl")
 OUT    = Path("faiss_index/store.pkl")
 
