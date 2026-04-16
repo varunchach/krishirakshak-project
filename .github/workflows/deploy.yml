@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: "What to deploy"
+        required: true
+        default: "both"
+        type: choice
+        options: [api, ui, both]
 
 env:
   AWS_REGION:      us-east-1
@@ -46,18 +54,32 @@ jobs:
       - name: Run tests
         run: pytest src/tests/ -v --tb=short --ignore=src/tests/test_api.py
 
-  # ── Job 2: Deploy API — only on push to main, after tests pass ───────────────
+  # ── Job 2: Deploy API — skip if only frontend/ changed ───────────────────────
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.deploy_target == 'api' || github.event.inputs.deploy_target == 'both'))
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check if API files changed
+        id: api-changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            git fetch origin ${{ github.event.before }} --depth=1 2>/dev/null || true
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -vE '^frontend/' | wc -l)
+            echo "changed=$([ $CHANGED -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure AWS credentials
+        if: steps.api-changes.outputs.changed == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -65,13 +87,16 @@ jobs:
           aws-region:            ${{ env.AWS_REGION }}
 
       - name: Login to ECR
+        if: steps.api-changes.outputs.changed == 'true'
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Fetch FAISS index from S3
+        if: steps.api-changes.outputs.changed == 'true'
         run: python scripts/fetch_index.py
 
       - name: Build and push API image
+        if: steps.api-changes.outputs.changed == 'true'
         id: build-api
         run: |
           IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_API }}:${{ github.sha }}"
@@ -81,6 +106,7 @@ jobs:
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Update task definition with new image
+        if: steps.api-changes.outputs.changed == 'true'
         id: render-api-taskdef
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
@@ -89,6 +115,7 @@ jobs:
           image:           ${{ steps.build-api.outputs.image }}
 
       - name: Deploy API to ECS
+        if: steps.api-changes.outputs.changed == 'true'
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition:        ${{ steps.render-api-taskdef.outputs.task-definition }}
@@ -98,6 +125,7 @@ jobs:
           wait-for-minutes:       10
 
       - name: Health check
+        if: steps.api-changes.outputs.changed == 'true'
         run: |
           echo "Waiting 30s for container to warm up..."
           sleep 30
@@ -108,18 +136,36 @@ jobs:
           fi
           echo "Health check passed (HTTP $STATUS)"
 
-  # ── Job 3: Deploy UI — only on push to main, after tests pass ────────────────
+      - name: Skip notice
+        if: steps.api-changes.outputs.changed == 'false'
+        run: echo "No API files changed — skipping API deploy"
+
+  # ── Job 3: Deploy UI — skip if only src/ changed ─────────────────────────────
   deploy-ui:
     name: Deploy UI
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.deploy_target == 'ui' || github.event.inputs.deploy_target == 'both'))
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check if UI files changed
+        id: ui-changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            git fetch origin ${{ github.event.before }} --depth=1 2>/dev/null || true
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -E '^frontend/|^Dockerfile\.streamlit' | wc -l)
+            echo "changed=$([ $CHANGED -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure AWS credentials
+        if: steps.ui-changes.outputs.changed == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -127,9 +173,11 @@ jobs:
           aws-region:            ${{ env.AWS_REGION }}
 
       - name: Login to ECR
+        if: steps.ui-changes.outputs.changed == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push UI image
+        if: steps.ui-changes.outputs.changed == 'true'
         id: build-ui
         run: |
           IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_UI }}:${{ github.sha }}"
@@ -139,6 +187,7 @@ jobs:
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Update task definition with new image
+        if: steps.ui-changes.outputs.changed == 'true'
         id: render-ui-taskdef
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
@@ -147,6 +196,7 @@ jobs:
           image:           ${{ steps.build-ui.outputs.image }}
 
       - name: Deploy UI to ECS
+        if: steps.ui-changes.outputs.changed == 'true'
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition:        ${{ steps.render-ui-taskdef.outputs.task-definition }}
@@ -154,3 +204,7 @@ jobs:
           cluster:                ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
           wait-for-minutes:       15
+
+      - name: Skip notice
+        if: steps.ui-changes.outputs.changed == 'false'
+        run: echo "No UI files changed — skipping UI deploy"
