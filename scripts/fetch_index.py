@@ -13,7 +13,7 @@ import sys
 import boto3
 from pathlib import Path
 
-BUCKET = os.getenv("FAISS_S3_BUCKET", "krishirakshak-assets-dev")
+BUCKET = os.getenv("FAISS_S3_BUCKET", "krishirakshak-assets")
 KEY    = os.getenv("FAISS_S3_KEY",    "faiss_index/store.pkl")
 OUT    = Path("faiss_index/store.pkl")
 

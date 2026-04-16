@@ -179,6 +179,7 @@ def provision_iam(iam, project, env, account, assets_bucket_arn, dynamodb_arn, l
             {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
              "Resource": [f"{arn}:*" for arn in log_group_arns]},
             {"Effect": "Allow", "Action": ["cloudwatch:PutMetricData"], "Resource": "*"},
+            {"Effect": "Allow", "Action": ["textract:DetectDocumentText"], "Resource": "*"},
         ],
     }
     try:
@@ -329,8 +330,8 @@ def provision_ecs_service(ecs, project, env, ecr_url, exec_role_arn, task_role_a
         "portMappings": [{"containerPort": 8000, "hostPort": 8000, "protocol": "tcp"}],
         "environment": [
             {"name": "AWS_DEFAULT_REGION",            "value": REGION},
-            {"name": "S3_BUCKET",                     "value": f"{project}-assets-{env}"},
-            {"name": "FAISS_S3_BUCKET",               "value": f"{project}-assets-{env}"},
+            {"name": "S3_BUCKET",                     "value": f"{project}-assets"},
+            {"name": "FAISS_S3_BUCKET",               "value": f"{project}-assets"},
             {"name": "FAISS_S3_KEY",                  "value": "faiss_index/store.pkl"},
             {"name": "DYNAMODB_TABLE",                "value": f"{project}-predictions-{env}"},
             {"name": "SAGEMAKER_REGION",              "value": SM_REGION},
@@ -603,29 +604,30 @@ def main():
     ecs   = boto3.client("ecs",            region_name=region)
     apigw = boto3.client("apigatewayv2",   region_name=region)
 
-    print("[1/8] CloudWatch log groups")
+    print("[1/9] CloudWatch log groups")
     provision_log_groups(logs, project, env)
 
-    print("[2/8] DynamoDB")
+    print("[2/9] DynamoDB")
     ddb_name = provision_dynamodb(ddb, project, env)
     ddb_arn  = f"arn:aws:dynamodb:{region}:{account}:table/{ddb_name}"
 
-    print("[3/8] ECR")
+    print("[3/9] ECR")
     ecr_url = provision_ecr(ecr, project)
 
-    print("[4/8] Security groups")
+    print("[4/9] Security groups")
     apigw_sg, alb_sg, api_sg = provision_security_groups(ec2, project)
 
-    print("[5/8] ALB")
+    print("[5/9] ALB")
     alb_arn, alb_dns, tg_arn, listener_arn = provision_alb(elb, project, env, alb_sg)
 
-    print("[6/8] IAM roles")
-    assets_arn = f"arn:aws:s3:::{project}-assets-{env}"
+    print("[6/9] IAM roles")
+    assets_arn = f"arn:aws:s3:::{project}-assets"
     log_arns   = [f"arn:aws:logs:{region}:{account}:log-group:/{project}/api",
-                  f"arn:aws:logs:{region}:{account}:log-group:/{project}/api-gateway"]
+                  f"arn:aws:logs:{region}:{account}:log-group:/{project}/api-gateway",
+                  f"arn:aws:logs:{region}:{account}:log-group:/{project}/ui"]
     exec_arn, task_arn = provision_iam(iam, project, env, account, assets_arn, ddb_arn, log_arns)
 
-    print("[7/8] ECS cluster + service")
+    print("[7/9] ECS cluster + service")
     cluster = provision_ecs_cluster(ecs, project)
     provision_ecs_service(ecs, project, env, ecr_url, exec_arn, task_arn, cluster, tg_arn, api_sg)
 
