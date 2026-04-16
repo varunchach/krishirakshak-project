@@ -113,8 +113,10 @@ class RAGGenerator:
 # Module-level singleton — initialized on first import
 _generator: Optional[RAGGenerator] = None
 
-# Simple in-memory response cache — keyed by query (lowercased, stripped)
+# LRU cache capped at 256 entries — prevents unbounded memory growth in
+# long-running production containers.
 _cache: dict = {}
+_CACHE_MAX  = 256
 
 
 def get_generator() -> RAGGenerator:
@@ -131,6 +133,8 @@ def generate(query: str, chunks: List[Dict[str, Any]]) -> str:
         logger.info(f"Cache hit for query: {key[:60]}")
         return _cache[key]
     answer = get_generator().generate(query, chunks)["answer"]
+    if len(_cache) >= _CACHE_MAX:
+        _cache.pop(next(iter(_cache)))  # evict oldest entry
     _cache[key] = answer
     return answer
 

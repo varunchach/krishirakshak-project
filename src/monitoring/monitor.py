@@ -46,7 +46,7 @@ def _get_cw():
 
 # ── Judge ─────────────────────────────────────────────────────────────────────
 
-def _judge_rag(query: str, context_chunks: List[Dict], answer: str) -> Dict[str, float]:
+def judge_rag(query: str, context_chunks: List[Dict], answer: str) -> Dict[str, float]:
     """
     Use Llama 3.1 8B to score faithfulness and relevance.
     Returns scores between 0.0 and 1.0.
@@ -133,7 +133,7 @@ def log_rag_request(
         if guardrail_blocked or not context_chunks:
             return  # no RAG to score
 
-        scores = _judge_rag(query, context_chunks, answer)
+        scores = judge_rag(query, context_chunks, answer)
         if scores["faithfulness"] >= 0:
             _push_metric("Faithfulness",      scores["faithfulness"])
             _push_metric("AnswerRelevance",   scores["answer_relevance"])

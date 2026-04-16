@@ -1,0 +1,37 @@
+{
+  "family": "krishirakshak-ui",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::593755927741:role/krishirakshak-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::593755927741:role/krishirakshak-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "ui",
+      "image": "593755927741.dkr.ecr.us-east-1.amazonaws.com/krishirakshak-ui:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8501, "hostPort": 8501, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "API_URL", "value": "https://sgy86f7n6l.execute-api.us-east-1.amazonaws.com/v1" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/krishirakshak/ui",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "ui"
+        }
+      },
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -f http://localhost:8501/_stcore/health || exit 1"],
+        "interval":    30,
+        "timeout":     10,
+        "retries":     3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

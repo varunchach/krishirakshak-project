@@ -102,7 +102,7 @@ def run(
     session_id : str  = "default",
     file_path  : str  = None,
     agent             = None,
-) -> str:
+) -> tuple:
     """
     Run the agent for a single user turn.
 
@@ -113,12 +113,14 @@ def run(
         agent      : compiled LangGraph agent (built once at startup)
 
     Returns:
-        Final text response from agent
+        (answer: str, context_chunks: list) — chunks are from retriever_tool
+        calls, used for RAG eval metrics in monitoring.
     """
+    import json as _json
+    from langchain_core.messages import HumanMessage, ToolMessage
+
     if agent is None:
         agent = build_graph()
-
-    from langchain_core.messages import HumanMessage
 
     content = user_input
     if file_path:
@@ -134,4 +136,13 @@ def run(
         config=config,
     )
 
-    return result["messages"][-1].content
+    # Extract retrieved chunks from retriever_tool ToolMessages for monitoring
+    context_chunks = []
+    for msg in result["messages"]:
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", "") == "retriever_tool":
+            try:
+                context_chunks.extend(_json.loads(msg.content))
+            except Exception:
+                pass
+
+    return result["messages"][-1].content, context_chunks

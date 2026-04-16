@@ -37,6 +37,14 @@ outputs/
 .DS_Store
 Thumbs.db
 
+# Claude Code local settings
+.claude/
+
+# Stray images in docs (only PDFs are relevant)
+docs/*.png
+docs/*.jpg
+docs/*.jpeg
+
 # Model weights (use S3/DVC)
 *.bin
 *.pt

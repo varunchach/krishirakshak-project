@@ -1,0 +1,148 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION:      us-east-1
+  ECR_REGISTRY:    593755927741.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPO_API:    krishirakshak-api
+  ECR_REPO_UI:     krishirakshak-ui
+  ECS_CLUSTER:     krishirakshak-cluster
+  ECS_SERVICE_API: krishirakshak-api
+  ECS_SERVICE_UI:  krishirakshak-ui
+  API_HEALTH_URL:  https://sgy86f7n6l.execute-api.us-east-1.amazonaws.com/v1/health
+
+jobs:
+  # ── Job 1: Tests — runs on every PR and every push to main ───────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest src/tests/ -v --tb=short
+
+  # ── Job 2: Deploy API — only on push to main, after tests pass ───────────────
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Fetch FAISS index from S3
+        run: python scripts/fetch_index.py
+
+      - name: Build and push API image
+        id: build-api
+        run: |
+          IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_API }}:${{ github.sha }}"
+          docker build -f Dockerfile -t "$IMAGE" -t "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_API }}:latest" .
+          docker push "$IMAGE"
+          docker push "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_API }}:latest"
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Update task definition with new image
+        id: render-api-taskdef
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: infra/taskdef-api.json
+          container-name:  api
+          image:           ${{ steps.build-api.outputs.image }}
+
+      - name: Deploy API to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition:        ${{ steps.render-api-taskdef.outputs.task-definition }}
+          service:                ${{ env.ECS_SERVICE_API }}
+          cluster:                ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes:       10
+
+      - name: Health check
+        run: |
+          echo "Waiting 30s for container to warm up..."
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ env.API_HEALTH_URL }})
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed — status $STATUS"
+            exit 1
+          fi
+          echo "Health check passed (HTTP $STATUS)"
+
+  # ── Job 3: Deploy UI — only on push to main, after tests pass ────────────────
+  deploy-ui:
+    name: Deploy UI
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push UI image
+        id: build-ui
+        run: |
+          IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_UI }}:${{ github.sha }}"
+          docker build -f Dockerfile.streamlit -t "$IMAGE" -t "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_UI }}:latest" .
+          docker push "$IMAGE"
+          docker push "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_UI }}:latest"
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Update task definition with new image
+        id: render-ui-taskdef
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: infra/taskdef-ui.json
+          container-name:  ui
+          image:           ${{ steps.build-ui.outputs.image }}
+
+      - name: Deploy UI to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition:        ${{ steps.render-ui-taskdef.outputs.task-definition }}
+          service:                ${{ env.ECS_SERVICE_UI }}
+          cluster:                ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes:       10

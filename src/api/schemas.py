@@ -26,12 +26,13 @@ class IngestRequest(BaseModel):
 
 
 class AgentResponse(BaseModel):
-    request_id : Optional[str]   = None
-    answer     : str
-    session_id : str
-    language   : str
-    audio_url  : Optional[str]   = None
-    latency_ms : Optional[float] = None
+    request_id   : Optional[str]   = None
+    answer       : str
+    session_id   : str
+    language     : str
+    audio_url    : Optional[str]   = None
+    latency_ms   : Optional[float] = None
+    eval_metrics : Optional[dict]  = None  # faithfulness, answer_relevance, context_relevance, context_precision
 
 
 class IngestResponse(BaseModel):

@@ -67,7 +67,7 @@ def parse_args():
 
 # ── 1. CloudWatch log groups ───────────────────────────────────────────────────
 def provision_log_groups(logs, project, env):
-    for name in [f"/{project}/api", f"/{project}/api-gateway"]:
+    for name in [f"/{project}/api", f"/{project}/api-gateway", f"/{project}/ui"]:
         try:
             logs.create_log_group(logGroupName=name, tags=tag_dict(TAGS))
             logs.put_retention_policy(logGroupName=name, retentionInDays=30)
@@ -371,7 +371,126 @@ def provision_ecs_service(ecs, project, env, ecr_url, exec_role_arn, task_role_a
         print(f"  Created ECS service: {svc_name}")
 
 
-# ── 9. API Gateway ─────────────────────────────────────────────────────────────
+# ── 9. Streamlit public ALB + ECS service ─────────────────────────────────────
+def provision_streamlit(ecr, elb, ecs, ec2, project, env, exec_role_arn, task_role_arn, cluster_name, api_url):
+    # ECR repo for Streamlit image
+    ui_repo = f"{project}-ui"
+    try:
+        resp    = ecr.create_repository(repositoryName=ui_repo, imageScanningConfiguration={"scanOnPush": True}, tags=TAGS)
+        ui_url  = resp["repository"]["repositoryUri"]
+        print(f"  Created ECR repo: {ui_url}")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "RepositoryAlreadyExistsException":
+            ui_url = ecr.describe_repositories(repositoryNames=[ui_repo])["repositories"][0]["repositoryUri"]
+            print(f"  ECR repo exists: {ui_url}")
+        else:
+            raise
+
+    # Security group — allow port 8501 from internet
+    ui_sg_name = f"{project}-ui-sg"
+    ui_sg = _sg_id(ec2, ui_sg_name)
+    if not ui_sg:
+        resp  = ec2.create_security_group(GroupName=ui_sg_name, Description="Streamlit UI SG", VpcId=VPC_ID,
+                                          TagSpecifications=[{"ResourceType": "security-group", "Tags": TAGS}])
+        ui_sg = resp["GroupId"]
+        ec2.authorize_security_group_ingress(GroupId=ui_sg, IpPermissions=[
+            {"IpProtocol": "tcp", "FromPort": 8501, "ToPort": 8501, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
+        ])
+        print(f"  Created UI SG: {ui_sg}")
+    else:
+        print(f"  UI SG exists: {ui_sg}")
+
+    # Public ALB for Streamlit
+    ui_alb_name = f"{project}-ui-alb"
+    ui_tg_name  = f"{project}-ui-tg"
+
+    try:
+        tg      = elb.describe_target_groups(Names=[ui_tg_name])["TargetGroups"][0]
+        ui_tg   = tg["TargetGroupArn"]
+        print(f"  UI target group exists")
+    except ClientError:
+        ui_tg = elb.create_target_group(
+            Name=ui_tg_name, Protocol="HTTP", Port=8501, VpcId=VPC_ID, TargetType="ip",
+            HealthCheckPath="/_stcore/health", HealthCheckIntervalSeconds=30,
+            HealthCheckTimeoutSeconds=10, HealthyThresholdCount=2, UnhealthyThresholdCount=3,
+            Matcher={"HttpCode": "200"}, Tags=TAGS,
+        )["TargetGroups"][0]["TargetGroupArn"]
+        print(f"  Created UI target group")
+
+    try:
+        alb     = elb.describe_load_balancers(Names=[ui_alb_name])["LoadBalancers"][0]
+        ui_alb_dns = alb["DNSName"]
+        ui_alb_arn = alb["LoadBalancerArn"]
+        print(f"  UI ALB exists: {ui_alb_dns}")
+    except ClientError:
+        alb        = elb.create_load_balancer(
+            Name=ui_alb_name, Scheme="internet-facing", Type="application",
+            SecurityGroups=[ui_sg], Subnets=SUBNET_IDS, Tags=TAGS,
+        )["LoadBalancers"][0]
+        ui_alb_arn = alb["LoadBalancerArn"]
+        ui_alb_dns = alb["DNSName"]
+        elb.get_waiter("load_balancer_available").wait(LoadBalancerArns=[ui_alb_arn])
+        print(f"  Created UI ALB: {ui_alb_dns}")
+
+    listeners = elb.describe_listeners(LoadBalancerArn=ui_alb_arn)["Listeners"]
+    if not listeners:
+        elb.create_listener(
+            LoadBalancerArn=ui_alb_arn, Protocol="HTTP", Port=80,
+            DefaultActions=[{"Type": "forward", "TargetGroupArn": ui_tg}],
+        )
+        print(f"  Created UI ALB listener")
+
+    # ECS task definition for Streamlit
+    container = {
+        "name"        : "ui",
+        "image"       : f"{ui_url}:latest",
+        "essential"   : True,
+        "portMappings": [{"containerPort": 8501, "hostPort": 8501, "protocol": "tcp"}],
+        "environment" : [{"name": "API_URL", "value": api_url}],
+        "logConfiguration": {
+            "logDriver": "awslogs",
+            "options"  : {
+                "awslogs-group"        : f"/{project}/ui",
+                "awslogs-region"       : REGION,
+                "awslogs-stream-prefix": "ui",
+            },
+        },
+        "healthCheck": {
+            "command"    : ["CMD-SHELL", "curl -f http://localhost:8501/_stcore/health || exit 1"],
+            "interval"   : 30, "timeout": 10, "retries": 3, "startPeriod": 60,
+        },
+    }
+
+    td     = ecs.register_task_definition(
+        family=f"{project}-ui", requiresCompatibilities=["FARGATE"],
+        networkMode="awsvpc", cpu="512", memory="1024",
+        executionRoleArn=exec_role_arn, taskRoleArn=task_role_arn,
+        containerDefinitions=[container], tags=TAGS_ECS,
+    )
+    td_arn = td["taskDefinition"]["taskDefinitionArn"]
+    print(f"  Registered UI task definition")
+
+    svc_name = f"{project}-ui"
+    services = ecs.describe_services(cluster=cluster_name, services=[svc_name])["services"]
+    if services and services[0]["status"] == "ACTIVE":
+        ecs.update_service(cluster=cluster_name, service=svc_name, taskDefinition=td_arn, desiredCount=1)
+        print(f"  Updated UI ECS service")
+    else:
+        ecs.create_service(
+            cluster=cluster_name, serviceName=svc_name,
+            taskDefinition=td_arn, desiredCount=1, launchType="FARGATE",
+            networkConfiguration={"awsvpcConfiguration": {
+                "subnets": SUBNET_IDS, "securityGroups": [ui_sg], "assignPublicIp": "ENABLED",
+            }},
+            loadBalancers=[{"targetGroupArn": ui_tg, "containerName": "ui", "containerPort": 8501}],
+            tags=TAGS_ECS,
+        )
+        print(f"  Created UI ECS service")
+
+    return ui_url, ui_alb_dns
+
+
+# ── 10. API Gateway ─────────────────────────────────────────────────────────────
 def provision_apigw(apigw, project, apigw_sg, listener_arn):
     # VPC link
     links = apigw.get_vpc_links()["Items"]
@@ -489,17 +608,25 @@ def main():
     cluster = provision_ecs_cluster(ecs, project)
     provision_ecs_service(ecs, project, env, ecr_url, exec_arn, task_arn, cluster, tg_arn, api_sg)
 
-    print("[8/8] API Gateway")
+    print("[8/9] API Gateway")
     invoke_url = provision_apigw(apigw, project, apigw_sg, listener_arn)
+
+    print("[9/9] Streamlit UI")
+    ui_ecr_url, ui_alb_dns = provision_streamlit(
+        ecr, elb, ecs, ec2, project, env,
+        exec_arn, task_arn, cluster,
+        api_url=f"{invoke_url}/v1",
+    )
 
     print(f"""
 === Done ===
-ECR repo URL : {ecr_url}
+ECR API repo : {ecr_url}
+ECR UI repo  : {ui_ecr_url}
 DynamoDB     : {ddb_name}
-ALB DNS      : {alb_dns}
 API URL      : {invoke_url}
+UI URL       : http://{ui_alb_dns}
 
-Next: bash scripts/deploy.sh dev
+Next: .\\scripts\\deploy.ps1
 """)
 
 

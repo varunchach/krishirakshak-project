@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 
 import boto3
@@ -23,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 SAGEMAKER_REGION   = os.getenv("SAGEMAKER_REGION", "ap-south-1")
 SAGEMAKER_ENDPOINT = os.getenv("SAGEMAKER_ENDPOINT", "bge-m3-krishirakshak")
-BATCH_SIZE         = 8
+BATCH_SIZE         = 32  # increased from 8 — BGE-M3 handles larger batches fine
+EMBED_WORKERS      = 4   # concurrent SageMaker calls during ingestion
 KEEP_WARM_INTERVAL = 240  # seconds — ping every 4 min (serverless timeout ~5 min)
 
 # ── Singleton client ──────────────────────────────────────────────────────────
@@ -85,6 +87,18 @@ def start_keep_warm():
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def _embed_batch(batch: List[str], batch_idx: int) -> tuple[int, np.ndarray]:
+    """Embed a single batch — called concurrently from get_embeddings."""
+    resp = _get_sm_client().invoke_endpoint(
+        EndpointName=SAGEMAKER_ENDPOINT,
+        ContentType="application/json",
+        Body=json.dumps({"inputs": batch, "normalize": True}),
+    )
+    raw  = json.loads(resp["Body"].read())
+    vecs = raw["embeddings"] if isinstance(raw, dict) else raw
+    return batch_idx, np.array(vecs, dtype="float32")
+
+
 def get_embeddings(texts: List[str], prefix: str = "passage") -> np.ndarray:
     """
     Embed texts using BGE-M3 on SageMaker.
@@ -94,22 +108,23 @@ def get_embeddings(texts: List[str], prefix: str = "passage") -> np.ndarray:
         prefix : "passage" for documents, "query" for queries
     Returns:
         np.ndarray of shape (len(texts), 1024), float32, L2-normalised
+
+    Batches are sent concurrently (EMBED_WORKERS) to maximise throughput
+    during large document ingestion.
     """
-    runtime  = _get_sm_client()
     prefixed = [f"{prefix}: {t}" for t in texts]
-    all_vecs = []
+    batches  = [prefixed[i:i + BATCH_SIZE] for i in range(0, len(prefixed), BATCH_SIZE)]
 
-    for i in range(0, len(prefixed), BATCH_SIZE):
-        batch = prefixed[i:i + BATCH_SIZE]
-        resp  = runtime.invoke_endpoint(
-            EndpointName=SAGEMAKER_ENDPOINT,
-            ContentType="application/json",
-            Body=json.dumps({"inputs": batch, "normalize": True}),
-        )
-        raw  = json.loads(resp["Body"].read())
-        vecs = raw["embeddings"] if isinstance(raw, dict) else raw
-        all_vecs.append(np.array(vecs, dtype="float32"))
+    # Use single thread for small requests (query-time), parallel for ingestion
+    workers  = min(EMBED_WORKERS, len(batches))
+    results  = [None] * len(batches)
 
-    result = np.vstack(all_vecs)
-    logger.info(f"Embedded {len(texts)} texts → shape {result.shape}")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_embed_batch, batch, idx): idx for idx, batch in enumerate(batches)}
+        for future in as_completed(futures):
+            idx, vecs   = future.result()
+            results[idx] = vecs
+
+    result = np.vstack(results)
+    logger.info(f"Embedded {len(texts)} texts in {len(batches)} batches → shape {result.shape}")
     return result

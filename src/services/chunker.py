@@ -100,7 +100,10 @@ def chunk_text(
     if not sentences:
         return []
 
-    tagged    = [(s, detect_language(s)) for s in sentences]
+    # Detect language once on the first 500 chars — avoids calling Lingua
+    # for every sentence (hundreds of calls on large documents).
+    doc_lang = detect_language(text[:500])
+    tagged   = [(s, doc_lang) for s in sentences]
 
     # Group consecutive same-language sentences
     groups: List[tuple] = []
@@ -115,6 +118,11 @@ def chunk_text(
 
     chunks      : List[Dict[str, Any]] = []
     chunk_index : int = 0
+
+    # Create splitter once — not inside the loop
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=en_chunk_size, chunk_overlap=en_overlap
+    )
 
     for lang, sents in groups:
         if lang == "hi":
@@ -151,9 +159,6 @@ def chunk_text(
                     chunk_index += 1
 
         else:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=en_chunk_size, chunk_overlap=en_overlap
-            )
             for chunk in splitter.split_text(" ".join(sents)):
                 entities = extract_entities(chunk)
                 chunks.append({

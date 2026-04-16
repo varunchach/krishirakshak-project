@@ -149,36 +149,84 @@ def _get_agent():
 
 def _extract_pdf_text(pdf_bytes: bytes, filename: str) -> str:
     """
-    Extract text from PDF — two-stage pipeline:
+    Extract text from PDF — three-stage pipeline:
     1. fitz       — fast, handles most text-based PDFs
     2. pdfplumber — fallback for complex layouts / encoding edge cases
+    3. AWS Textract — fallback for scanned / image-only PDFs (OCR)
     """
     import fitz
     import io
 
+    # Open once — reused across all three stages to avoid parsing PDF bytes twice
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as e:
+        logger.warning(f"fitz could not open PDF: {e}")
+        return ""
+
     # Stage 1 — fitz
     try:
-        doc  = fitz.open(stream=pdf_bytes, filetype="pdf")
         text = "\n".join(page.get_text() for page in doc)
-        doc.close()
     except Exception as e:
-        logger.warning(f"fitz failed: {e}")
+        logger.warning(f"fitz text extraction failed: {e}")
         text = ""
 
     if len(text.strip()) >= 100:
+        doc.close()
         logger.info(f"Extracted {len(text)} chars via fitz")
         return text
 
     # Stage 2 — pdfplumber (better with complex layouts, tables, encodings)
-    logger.info(f"fitz got {len(text.strip())} chars — trying pdfplumber")
+    # Skip for large PDFs (> 1 MB) where fitz found nothing — almost certainly a
+    # scanned/image PDF; pdfplumber won't help and is very slow on large files.
+    if len(pdf_bytes) <= 1_000_000:
+        logger.info(f"fitz got {len(text.strip())} chars — trying pdfplumber")
+        try:
+            import pdfplumber
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                pages_text = [page.extract_text() or "" for page in pdf.pages]
+            text = "\n".join(pages_text)
+            logger.info(f"pdfplumber extracted {len(text)} chars")
+        except Exception as e:
+            logger.warning(f"pdfplumber failed: {e}")
+
+        if len(text.strip()) >= 100:
+            doc.close()
+            logger.info(f"Extracted {len(text)} chars via pdfplumber")
+            return text
+    else:
+        logger.info(f"fitz got {len(text.strip())} chars on a {len(pdf_bytes)//1024}KB PDF — skipping pdfplumber, going straight to Textract")
+
+    # Stage 3 — AWS Textract (scanned / image-only PDFs)
+    # Reuses the already-open fitz doc — no second PDF parse needed.
+    # Each page is rendered to PNG and sent to Textract synchronously.
+    logger.info(f"Trying AWS Textract (OCR) on {len(doc)} pages")
     try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            pages_text = [page.extract_text() or "" for page in pdf.pages]
+        textract   = boto3.client("textract", region_name=os.getenv("SAGEMAKER_REGION", "ap-south-1"))
+        pages_text = []
+
+        for page_num, page in enumerate(doc):
+            mat       = fitz.Matrix(150 / 72, 150 / 72)
+            pix       = page.get_pixmap(matrix=mat, alpha=False)
+            img_bytes = pix.tobytes("png")
+
+            try:
+                response   = textract.detect_document_text(Document={"Bytes": img_bytes})
+                page_lines = [
+                    block["Text"]
+                    for block in response.get("Blocks", [])
+                    if block["BlockType"] == "LINE"
+                ]
+                pages_text.append("\n".join(page_lines))
+            except Exception as e:
+                logger.warning(f"Textract failed on page {page_num + 1}: {e}")
+
         text = "\n".join(pages_text)
-        logger.info(f"pdfplumber extracted {len(text)} chars")
+        logger.info(f"Textract extracted {len(text)} chars across {len(pages_text)} pages")
     except Exception as e:
-        logger.error(f"pdfplumber failed: {e}")
+        logger.error(f"AWS Textract stage failed: {e}")
+    finally:
+        doc.close()
 
     return text
 
@@ -228,21 +276,31 @@ async def query(req: QueryRequest, request: Request):
     if not raw_store.is_empty():
         # Small doc path — full text directly to Claude, skip agent overhead
         from src.models.rag_generator import generate_direct as _generate_direct
-        answer = _generate_direct(req.query, raw_store.get_all_text())
-        chunks = []
+        full_text = raw_store.get_all_text()
+        answer    = _generate_direct(req.query, full_text)
+        chunks    = [{"chunk": full_text[:2000], "score": 1.0}]  # synthetic chunk for eval
         logger.info("Query served via direct context (small doc)")
     else:
         # ReAct agent path — retriever → web search fallback → generate
-        answer = agent_run(
+        answer, chunks = agent_run(
             user_input=req.query,
             session_id=req.session_id,
             agent=_get_agent(),
         )
-        chunks = []  # agent manages retrieval internally
-        logger.info("Query served via ReAct agent")
+        logger.info(f"Query served via ReAct agent ({len(chunks)} context chunks retrieved)")
 
     latency_ms = round((time.monotonic() - start) * 1000, 1)
 
+    # Compute eval metrics synchronously so they can be returned to the UI
+    eval_metrics = None
+    if chunks:
+        try:
+            from src.monitoring.monitor import judge_rag
+            eval_metrics = judge_rag(req.query, chunks, answer)
+        except Exception as e:
+            logger.warning(f"Eval metrics failed: {e}")
+
+    # Push to CloudWatch in background — never blocks the response
     import threading
     threading.Thread(
         target=log_rag_request,
@@ -257,12 +315,13 @@ async def query(req: QueryRequest, request: Request):
         audio_url   = _s3.upload_audio(audio_bytes, key=f"audio/{req.session_id}/{request_id}.mp3")
 
     return AgentResponse(
-        request_id=request_id,
-        answer    =answer,
-        session_id=req.session_id,
-        language  =lang,
-        audio_url =audio_url,
-        latency_ms=latency_ms,
+        request_id  =request_id,
+        answer      =answer,
+        session_id  =req.session_id,
+        language    =lang,
+        audio_url   =audio_url,
+        latency_ms  =latency_ms,
+        eval_metrics=eval_metrics,
     )
 
 
@@ -362,7 +421,7 @@ async def ingest(
     if len(pdf_bytes) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    # ── Extract text — try fitz first, fall back to Textract for scanned PDFs ──
+    # ── Extract text — fitz → pdfplumber → Textract (scanned PDFs) ──
     text = _extract_pdf_text(pdf_bytes, pdf.filename)
     logger.info(f"Extracted {len(text)} chars from PDF")
 

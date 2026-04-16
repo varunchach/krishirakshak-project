@@ -68,13 +68,42 @@ class VectorStore:
             except Exception as e:
                 logger.warning(f"Could not persist FAISS index to S3: {e}")
 
+    # ── Metadata filter ───────────────────────────────────────────────────────
+
+    def _filter_by_metadata(self, query: str) -> List[int]:
+        """
+        Scan all chunks and return indices whose disease_mentioned or
+        crop_mentioned metadata matches entities found in the query.
+        Pesticide is intentionally excluded — too broad.
+        """
+        from src.services.chunker import extract_entities
+        entities = extract_entities(query)
+
+        diseases = set(entities["disease_mentioned"])
+        crops    = set(entities["crop_mentioned"])
+
+        if not diseases and not crops:
+            return []
+
+        matched = []
+        for i, chunk in enumerate(self.chunks):
+            if diseases & set(chunk.get("disease_mentioned", [])):
+                matched.append(i)
+            elif crops & set(chunk.get("crop_mentioned", [])):
+                matched.append(i)
+        return matched
+
     # ── Search ────────────────────────────────────────────────────────────────
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
-        Hybrid search: FAISS vector + BM25 lexical, fused via RRF.
+        Hybrid search: FAISS vector + BM25 lexical fused via RRF,
+        OR-merged with metadata-filtered chunks.
 
-        Returns list of dicts: {chunk, metadata, score}
+        Union logic:
+          Set A — top-k from FAISS+BM25+RRF (scored)
+          Set B — all chunks matching disease/crop metadata in query
+          final — A ∪ B, ranked by RRF score (B-only chunks score 0.0), top-k returned
         """
         if self.faiss_index is None or not self.chunks:
             logger.warning("Index is empty — returning no results")
@@ -97,13 +126,21 @@ class VectorStore:
         bm25_results = {bm25_ranked[i]: i + 1 for i in range(len(bm25_ranked))}
 
         # RRF fusion
-        all_ids = set(vec_results) | set(bm25_results)
+        rrf_ids = set(vec_results) | set(bm25_results)
         rrf     = {
             idx: 1 / (RRF_K + vec_results.get(idx, fetch_k + 1))
                 + 1 / (RRF_K + bm25_results.get(idx, fetch_k + 1))
-            for idx in all_ids
+            for idx in rrf_ids
         }
+
+        # Metadata filter — OR merge (B-only chunks get score 0.0)
+        meta_ids = self._filter_by_metadata(query)
+        for idx in meta_ids:
+            if idx not in rrf:
+                rrf[idx] = 0.0
+
         top_ids = sorted(rrf, key=lambda i: rrf[i], reverse=True)[:k]
+        logger.info(f"search: {len(rrf_ids)} retriever + {len(meta_ids)} metadata → top {len(top_ids)}")
 
         return [
             {

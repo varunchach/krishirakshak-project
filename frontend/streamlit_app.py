@@ -11,7 +11,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_URL = "http://localhost:8000/v1"
+import os
+API_URL = os.getenv("API_URL", "http://localhost:8000/v1")
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -162,6 +163,27 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     border-radius: 10px !important;
     background: rgba(255,255,255,0.04) !important;
 }
+
+/* ── File uploader inside sidebar expanders ── */
+/* Dropzone has a white/light background — force dark text so it's readable */
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"],
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
+    color: #1a1a1a !important;
+    background-color: #f0fdf4 !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] svg {
+    fill: #15803d !important;
+}
+/* "Browse files" button inside the uploader */
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
+    color: #ffffff !important;
+    background-color: #15803d !important;
+    border: none !important;
+}
+/* Uploaded file name chip */
+[data-testid="stSidebar"] [data-testid="stFileUploaderFile"] * {
+    color: #1a1a1a !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -198,7 +220,7 @@ with st.sidebar:
                         f"{API_URL}/ingest",
                         files={"pdf": (pdf.name, pdf.getvalue(), "application/pdf")},
                         data={"source": pdf.name},
-                        timeout=120,
+                        timeout=300,
                     )
                     if r.status_code == 200:
                         st.success(f"{r.json()['chunks_added']} chunks added")
@@ -307,9 +329,10 @@ if user_input and user_input.strip():
             if r.status_code == 200:
                 d = r.json()
                 st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": d["answer"],
-                    "audio_url": d.get("audio_url"),
+                    "role"        : "assistant",
+                    "content"     : d["answer"],
+                    "audio_url"   : d.get("audio_url"),
+                    "eval_metrics": d.get("eval_metrics"),
                 })
             else:
                 st.session_state.messages.append({

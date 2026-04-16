@@ -1,0 +1,47 @@
+{
+  "family": "krishirakshak-api",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::593755927741:role/krishirakshak-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::593755927741:role/krishirakshak-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "593755927741.dkr.ecr.us-east-1.amazonaws.com/krishirakshak-api:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8000, "hostPort": 8000, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "AWS_DEFAULT_REGION",            "value": "us-east-1" },
+        { "name": "SAGEMAKER_REGION",              "value": "ap-south-1" },
+        { "name": "SAGEMAKER_ENDPOINT",            "value": "bge-m3-krishirakshak" },
+        { "name": "CLASSIFIER_BACKEND",            "value": "sagemaker" },
+        { "name": "CLASSIFIER_SAGEMAKER_REGION",   "value": "ap-south-1" },
+        { "name": "CLASSIFIER_SAGEMAKER_ENDPOINT", "value": "krishirakshak-efficientnet-b3" },
+        { "name": "S3_BUCKET",                     "value": "krishirakshak-assets" },
+        { "name": "FAISS_S3_BUCKET",               "value": "krishirakshak-assets" },
+        { "name": "FAISS_S3_KEY",                  "value": "faiss_index/store.pkl" },
+        { "name": "DYNAMODB_TABLE",                "value": "krishirakshak-predictions-dev" },
+        { "name": "WORKERS",                       "value": "2" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/krishirakshak/api",
+          "awslogs-region":        "us-east-1",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -f http://localhost:8000/v1/health || exit 1"],
+        "interval":    30,
+        "timeout":     10,
+        "retries":     3,
+        "startPeriod": 90
+      }
+    }
+  ]
+}
