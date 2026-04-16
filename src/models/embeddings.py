@@ -87,15 +87,21 @@ def start_keep_warm():
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def _embed_batch(batch: List[str], batch_idx: int) -> tuple[int, np.ndarray]:
+def _embed_batch(batch: List[str], batch_idx: int, total_batches: int) -> tuple[int, np.ndarray]:
     """Embed a single batch — called concurrently from get_embeddings."""
+    t0   = time.time()
     resp = _get_sm_client().invoke_endpoint(
         EndpointName=SAGEMAKER_ENDPOINT,
         ContentType="application/json",
         Body=json.dumps({"inputs": batch, "normalize": True}),
     )
-    raw  = json.loads(resp["Body"].read())
-    vecs = raw["embeddings"] if isinstance(raw, dict) else raw
+    raw      = json.loads(resp["Body"].read())
+    vecs     = raw["embeddings"] if isinstance(raw, dict) else raw
+    duration = round((time.time() - t0) * 1000)
+    logger.info(
+        f"BGE-M3 | batch {batch_idx + 1}/{total_batches} | "
+        f"texts={len(batch)} | endpoint={SAGEMAKER_ENDPOINT} | duration={duration}ms"
+    )
     return batch_idx, np.array(vecs, dtype="float32")
 
 
@@ -114,17 +120,28 @@ def get_embeddings(texts: List[str], prefix: str = "passage") -> np.ndarray:
     """
     prefixed = [f"{prefix}: {t}" for t in texts]
     batches  = [prefixed[i:i + BATCH_SIZE] for i in range(0, len(prefixed), BATCH_SIZE)]
-
-    # Use single thread for small requests (query-time), parallel for ingestion
     workers  = min(EMBED_WORKERS, len(batches))
     results  = [None] * len(batches)
 
+    logger.info(
+        f"BGE-M3 embedding started | texts={len(texts)} | "
+        f"batches={len(batches)} | workers={workers} | prefix={prefix}"
+    )
+    t0 = time.time()
+
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_embed_batch, batch, idx): idx for idx, batch in enumerate(batches)}
+        futures = {
+            pool.submit(_embed_batch, batch, idx, len(batches)): idx
+            for idx, batch in enumerate(batches)
+        }
         for future in as_completed(futures):
-            idx, vecs   = future.result()
+            idx, vecs    = future.result()
             results[idx] = vecs
 
-    result = np.vstack(results)
-    logger.info(f"Embedded {len(texts)} texts in {len(batches)} batches → shape {result.shape}")
+    result   = np.vstack(results)
+    total_ms = round((time.time() - t0) * 1000)
+    logger.info(
+        f"BGE-M3 embedding done | texts={len(texts)} | "
+        f"shape={result.shape} | total_duration={total_ms}ms"
+    )
     return result
