@@ -39,9 +39,19 @@ class VectorStore:
     # ── Ingest ────────────────────────────────────────────────────────────────
 
     def add_chunks(self, new_chunks: List[Dict[str, Any]]) -> None:
-        """Embed and add chunks to FAISS + BM25 indexes."""
+        """
+        Embed and add chunks to FAISS + BM25 indexes.
+        Automatically deduplicates by source: any existing chunks from the
+        same source document are removed before the new ones are added.
+        This prevents duplicate vectors when re-ingesting an updated file.
+        """
         if not new_chunks:
             return
+
+        # Deduplicate by source — remove stale chunks before adding fresh ones
+        sources = {c.get("source", "") for c in new_chunks if c.get("source")}
+        for source in sources:
+            self.remove_by_source(source)
 
         texts    = [c["text"] for c in new_chunks]
         new_vecs = get_embeddings(texts, prefix="passage")
@@ -163,6 +173,47 @@ class VectorStore:
             )
 
         return results
+
+    # ── Deduplication ────────────────────────────────────────────────────────
+
+    def remove_by_source(self, source: str) -> int:
+        """
+        Remove all chunks (and their FAISS vectors) that belong to `source`.
+        Vectors are extracted via FAISS reconstruct — no re-embedding needed.
+        Returns the number of chunks removed.
+        """
+        if not self.chunks:
+            return 0
+
+        keep = [i for i, c in enumerate(self.chunks) if c.get("source", "") != source]
+        removed = len(self.chunks) - len(keep)
+
+        if removed == 0:
+            logger.info(f"remove_by_source: no existing chunks for '{source}'")
+            return 0
+
+        logger.info(f"remove_by_source: removing {removed} chunk(s) for '{source}'")
+
+        if keep and self.faiss_index is not None:
+            # Reconstruct kept vectors directly from FAISS — no SageMaker call needed
+            kept_vecs = np.vstack([
+                self.faiss_index.reconstruct(i).reshape(1, -1) for i in keep
+            ])
+            new_index = faiss.IndexFlatIP(self._dim)
+            new_index.add(kept_vecs)
+            self.faiss_index = new_index
+        else:
+            self.faiss_index = None
+
+        self.chunks = [self.chunks[i] for i in keep]
+        if self.chunks:
+            tokenized = [c["text"].lower().split() for c in self.chunks]
+            self.bm25  = BM25Okapi(tokenized)
+        else:
+            self.bm25 = None
+
+        logger.info(f"remove_by_source: index now has {len(self.chunks)} chunk(s)")
+        return removed
 
     # ── Persistence ───────────────────────────────────────────────────────────
 

@@ -525,7 +525,7 @@ async def ingest(
         # Large doc — chunk + embed into FAISS
         chunks = chunk_text(text, source=source)
         logger.info(f"Ingest [{source}] | chunking complete | chunks={len(chunks)}")
-        get_store().add_chunks(chunks)
+        get_store().add_chunks(chunks)  # deduplication by source is automatic inside add_chunks
         logger.info(
             f"Ingest complete [{source}] | strategy=faiss+bm25 | "
             f"chars={len(text)} | chunks={len(chunks)} | embeddings=sagemaker bge-m3"
