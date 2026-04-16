@@ -330,8 +330,8 @@ def provision_ecs_service(ecs, project, env, ecr_url, exec_role_arn, task_role_a
         "portMappings": [{"containerPort": 8000, "hostPort": 8000, "protocol": "tcp"}],
         "environment": [
             {"name": "AWS_DEFAULT_REGION",            "value": REGION},
-            {"name": "S3_BUCKET",                     "value": f"{project}-assets"},
-            {"name": "FAISS_S3_BUCKET",               "value": f"{project}-assets"},
+            {"name": "S3_BUCKET",                     "value": f"{project}-assets-{env}"},
+            {"name": "FAISS_S3_BUCKET",               "value": f"{project}-assets-{env}"},
             {"name": "FAISS_S3_KEY",                  "value": "faiss_index/store.pkl"},
             {"name": "DYNAMODB_TABLE",                "value": f"{project}-predictions-{env}"},
             {"name": "SAGEMAKER_REGION",              "value": SM_REGION},
@@ -621,7 +621,7 @@ def main():
     alb_arn, alb_dns, tg_arn, listener_arn = provision_alb(elb, project, env, alb_sg)
 
     print("[6/9] IAM roles")
-    assets_arn = f"arn:aws:s3:::{project}-assets"
+    assets_arn = f"arn:aws:s3:::{project}-assets-{env}"
     log_arns   = [f"arn:aws:logs:{region}:{account}:log-group:/{project}/api",
                   f"arn:aws:logs:{region}:{account}:log-group:/{project}/api-gateway",
                   f"arn:aws:logs:{region}:{account}:log-group:/{project}/ui"]

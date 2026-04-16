@@ -21,8 +21,8 @@
         { "name": "CLASSIFIER_BACKEND",            "value": "sagemaker" },
         { "name": "CLASSIFIER_SAGEMAKER_REGION",   "value": "ap-south-1" },
         { "name": "CLASSIFIER_SAGEMAKER_ENDPOINT", "value": "krishirakshak-efficientnet-b3" },
-        { "name": "S3_BUCKET",                     "value": "krishirakshak-assets" },
-        { "name": "FAISS_S3_BUCKET",               "value": "krishirakshak-assets" },
+        { "name": "S3_BUCKET",                     "value": "krishirakshak-assets-dev" },
+        { "name": "FAISS_S3_BUCKET",               "value": "krishirakshak-assets-dev" },
         { "name": "FAISS_S3_KEY",                  "value": "faiss_index/store.pkl" },
         { "name": "DYNAMODB_TABLE",                "value": "krishirakshak-predictions-dev" },
         { "name": "WORKERS",                       "value": "4" }
