@@ -25,7 +25,7 @@
         { "name": "FAISS_S3_BUCKET",               "value": "krishirakshak-assets" },
         { "name": "FAISS_S3_KEY",                  "value": "faiss_index/store.pkl" },
         { "name": "DYNAMODB_TABLE",                "value": "krishirakshak-predictions-dev" },
-        { "name": "WORKERS",                       "value": "2" }
+        { "name": "WORKERS",                       "value": "4" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

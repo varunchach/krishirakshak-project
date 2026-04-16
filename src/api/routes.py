@@ -464,10 +464,23 @@ async def feedback(req: FeedbackRequest):
     return FeedbackResponse(request_id=req.request_id)
 
 
+# ── Health check cache — SageMaker DescribeEndpoint takes ~1.5s, ALB fires
+# every 30s from 5 nodes with only 2 workers. Cache for 60s so health checks
+# respond in <5ms and don't block workers during ingest/query requests.
+_health_cache: dict = {}
+_HEALTH_CACHE_TTL = 60  # seconds
+
+
 # ── GET /v1/health ────────────────────────────────────────────────────────────
 @router.get("/health", response_model=HealthResponse)
 async def health():
     """Liveness + readiness check."""
+    now = time.monotonic()
+
+    # Return cached result if fresh
+    if _health_cache and (now - _health_cache["ts"]) < _HEALTH_CACHE_TTL:
+        return HealthResponse(**_health_cache["data"])
+
     classifier = get_backend_status(_clf_model)
     embeddings = {
         "backend": "sagemaker",
@@ -493,9 +506,12 @@ async def health():
         faiss_index_size = 0
 
     overall_status = "healthy" if classifier["ready"] and embeddings["ready"] else "degraded"
-    return HealthResponse(
+    data = dict(
         status          =overall_status,
         classifier      =classifier,
         embeddings      =embeddings,
         faiss_index_size=faiss_index_size,
     )
+    _health_cache["ts"]   = now
+    _health_cache["data"] = data
+    return HealthResponse(**data)
