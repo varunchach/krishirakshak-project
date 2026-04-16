@@ -15,7 +15,7 @@
         { "containerPort": 8501, "hostPort": 8501, "protocol": "tcp" }
       ],
       "environment": [
-        { "name": "API_URL", "value": "https://sgy86f7n6l.execute-api.us-east-1.amazonaws.com/v1" }
+        { "name": "API_URL", "value": "http://internal-krishirakshak-alb-2099090299.us-east-1.elb.amazonaws.com/v1" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
