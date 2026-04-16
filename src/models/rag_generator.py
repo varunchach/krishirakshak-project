@@ -142,6 +142,47 @@ def generate(query: str, chunks: List[Dict[str, Any]]) -> str:
     return answer
 
 
+def generate_direct_stream(
+    query    : str,
+    raw_text : str,
+    history  : Optional[List[tuple]] = None,
+):
+    """
+    Same as generate_direct but yields text tokens as they arrive.
+    Uses Bedrock converse_stream for token-by-token delivery.
+    """
+    gen = get_generator()
+
+    messages = []
+    if history:
+        for past_query, past_answer in history:
+            messages.append({"role": "user",      "content": [{"text": past_query}]})
+            messages.append({"role": "assistant",  "content": [{"text": past_answer}]})
+
+    user_message = (
+        f"Question: {query}\n\n"
+        f"Full document context:\n{raw_text[:60000]}\n\n"
+        f"Answer in the same language as the question. Plain prose only."
+    )
+    messages.append({"role": "user", "content": [{"text": user_message}]})
+
+    try:
+        resp = gen.client.converse_stream(
+            modelId=gen.model_id,
+            system=[{"text": SYSTEM_PROMPT}],
+            messages=messages,
+            inferenceConfig={"maxTokens": 300, "temperature": 0.1},
+        )
+        for event in resp["stream"]:
+            delta = event.get("contentBlockDelta", {}).get("delta", {})
+            token = delta.get("text", "")
+            if token:
+                yield token
+    except Exception as e:
+        logger.error(f"generate_direct_stream failed: {e}")
+        yield "Unable to generate advice. Please consult your local Krishi Vigyan Kendra."
+
+
 def generate_direct(
     query    : str,
     raw_text : str,

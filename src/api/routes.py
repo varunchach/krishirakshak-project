@@ -20,6 +20,7 @@ from datetime import date
 
 import boto3
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from src.api.schemas        import (
     AgentResponse, FeedbackRequest, FeedbackResponse, HealthResponse,
@@ -344,6 +345,59 @@ async def query(req: QueryRequest, request: Request):
         latency_ms  =latency_ms,
         eval_metrics=eval_metrics,
     )
+
+
+# ── POST /v1/query/stream ─────────────────────────────────────────────────────
+@router.post("/query/stream")
+async def query_stream(req: QueryRequest):
+    """
+    Streaming variant of /v1/query.
+    Returns Server-Sent Events (text/event-stream).
+    Each event: "data: <token>\n\n"
+    Final event: "data: [DONE]\n\n"
+
+    Currently supports the direct-context path (small docs).
+    Falls back to non-streaming for large-doc (FAISS) queries.
+    """
+    from src.services.guardrail import check as _guard, BLOCKED_RESPONSE
+    from src.models.rag_generator import generate_direct_stream as _stream
+
+    is_safe, _ = _guard(req.query)
+    if not is_safe:
+        async def _blocked():
+            yield f"data: {BLOCKED_RESPONSE}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_blocked(), media_type="text/event-stream")
+
+    from src.services.retriever import get_raw_store
+    raw_store = get_raw_store()
+
+    if not raw_store.is_empty():
+        full_text = raw_store.get_all_text()
+        history   = _session_history.get(req.session_id, [])
+
+        def _sse_generator():
+            full_answer = []
+            for token in _stream(req.query, full_text, history=history):
+                full_answer.append(token)
+                yield f"data: {token}\n\n"
+            # Update session history after full answer is assembled
+            answer = "".join(full_answer)
+            hist = _session_history.get(req.session_id, [])
+            hist.append((req.query, answer))
+            _session_history[req.session_id] = hist[-_MAX_SESSION_HISTORY:]
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(_sse_generator(), media_type="text/event-stream")
+
+    # Large-doc path — run agent normally and stream the final answer as one chunk
+    answer, _ = agent_run(user_input=req.query, session_id=req.session_id, agent=_get_agent())
+
+    async def _single_chunk():
+        yield f"data: {answer}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_single_chunk(), media_type="text/event-stream")
 
 
 # ── POST /v1/diagnose ─────────────────────────────────────────────────────────

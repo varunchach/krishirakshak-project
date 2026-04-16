@@ -300,11 +300,14 @@ st.markdown("""
 <div class="hero">
     <div class="hero-icon">🌱</div>
     <div class="hero-text">
-        <h1>KrishiRakshak</h1>
+        <h1>KrishiRakshak · कृषिरक्षक</h1>
         <p>Detect crop diseases, get treatment advice, and query farming documents — in Hindi or English.</p>
+        <p style="color:#86efac; font-size:0.85rem; margin-top:4px;">
+            नमस्ते किसान भाइयों! फसल की बीमारी पहचानें, इलाज जानें, और सरकारी दस्तावेज़ों से जानकारी पाएं।
+        </p>
         <div class="hero-pills">
             <span class="pill">Crop Disease Detection</span>
-            <span class="pill">Document Q&A</span>
+            <span class="pill">Document Q&amp;A</span>
             <span class="pill">Hindi · English</span>
             <span class="pill">Voice Responses</span>
         </div>
@@ -322,35 +325,63 @@ for msg in st.session_state.messages:
             st.audio(msg["audio_url"])
 
 # ── Chat input ────────────────────────────────────────────────────────────────
-user_input = st.chat_input("Ask about crop diseases, treatments, or farming policies...")
+user_input = st.chat_input("Ask in Hindi or English · हिंदी या अंग्रेज़ी में पूछें...")
 
 # ── Handle text query ─────────────────────────────────────────────────────────
 if user_input and user_input.strip():
     st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.spinner("Thinking..."):
+
+    with st.chat_message("assistant"):
         try:
-            r = requests.post(
-                f"{API_URL}/query",
-                json={
-                    "query": user_input,
-                    "session_id": st.session_state.session_id,
-                    "generate_audio": generate_audio,
-                },
-                timeout=90,
-            )
-            if r.status_code == 200:
-                d = r.json()
-                st.session_state.messages.append({
-                    "role"        : "assistant",
-                    "content"     : d["answer"],
-                    "audio_url"   : d.get("audio_url"),
-                    "eval_metrics": d.get("eval_metrics"),
-                })
-            else:
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": f"Error: {r.json().get('detail', r.text)}",
-                })
+            def _token_stream():
+                with requests.post(
+                    f"{API_URL}/query/stream",
+                    json={
+                        "query"         : user_input,
+                        "session_id"    : st.session_state.session_id,
+                        "generate_audio": False,
+                    },
+                    stream=True,
+                    timeout=90,
+                ) as resp:
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        text = line.decode("utf-8")
+                        if text.startswith("data: "):
+                            token = text[6:]
+                            if token == "[DONE]":
+                                return
+                            yield token
+
+            full_answer = st.write_stream(_token_stream())
+            st.session_state.messages.append({
+                "role"   : "assistant",
+                "content": full_answer or "",
+            })
+
+            # Request audio separately if enabled (non-blocking after stream completes)
+            if generate_audio and full_answer:
+                try:
+                    r = requests.post(
+                        f"{API_URL}/query",
+                        json={
+                            "query"         : user_input,
+                            "session_id"    : st.session_state.session_id,
+                            "generate_audio": True,
+                        },
+                        timeout=90,
+                    )
+                    if r.status_code == 200 and r.json().get("audio_url"):
+                        audio_url = r.json()["audio_url"]
+                        st.session_state.messages[-1]["audio_url"] = audio_url
+                        st.audio(audio_url)
+                except Exception:
+                    pass
+
         except Exception as e:
-            st.session_state.messages.append({"role": "assistant", "content": f"Cannot reach API: {e}"})
+            error_msg = f"Cannot reach API: {e}"
+            st.markdown(error_msg)
+            st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
     st.rerun()
