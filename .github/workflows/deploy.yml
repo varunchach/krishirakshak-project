@@ -202,8 +202,7 @@ jobs:
           task-definition:        ${{ steps.render-ui-taskdef.outputs.task-definition }}
           service:                ${{ env.ECS_SERVICE_UI }}
           cluster:                ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
-          wait-for-minutes:       15
+          wait-for-service-stability: false
 
       - name: Skip notice
         if: steps.ui-changes.outputs.changed == 'false'
