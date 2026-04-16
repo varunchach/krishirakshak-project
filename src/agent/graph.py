@@ -39,7 +39,8 @@ ANSWER FORMAT:
 - Under 150 words.
 - Mention at least one pesticide brand available in India with dosage if relevant.
 - End with one short prevention tip.
-- Respond in the SAME language as the user query (Hindi → Hindi, English → English)."""
+- Respond in the SAME language as the user query (Hindi → Hindi, English → English).
+- When your answer comes from retrieved chunks, end with "(Source: <filename>)" citing the source field from the chunk metadata. If multiple documents contributed, list all source names."""
 
 
 # ── LLM singleton — built once, reused across all agent loop iterations ────────
@@ -58,8 +59,22 @@ def _get_llm():
     return _llm
 
 
+_MAX_HISTORY_MESSAGES = 10  # keep last 5 exchanges (each exchange = human + assistant)
+
+
 def _agent_node(state: AgentState) -> AgentState:
-    response = _get_llm().invoke(state["messages"])
+    messages = state["messages"]
+
+    # Trim to prevent unbounded context growth across sessions.
+    # Always keep: the latest SystemMessage + last _MAX_HISTORY_MESSAGES non-system messages.
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    other_msgs  = [m for m in messages if not isinstance(m, SystemMessage)]
+    trimmed     = (system_msgs[-1:] if system_msgs else []) + other_msgs[-_MAX_HISTORY_MESSAGES:]
+
+    if len(messages) != len(trimmed):
+        logger.debug(f"Memory trim: {len(messages)} → {len(trimmed)} messages (session history capped)")
+
+    response = _get_llm().invoke(trimmed)
 
     if response.content and not response.tool_calls:
         logger.info(f"[Thought] {str(response.content)[:200]}")

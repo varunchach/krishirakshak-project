@@ -32,15 +32,18 @@ STRICT RULES — follow every rule exactly:
 4. Mention at least one pesticide brand available in India with dosage.
 5. End with one short prevention tip for next season.
 6. If the context does not contain enough information, say so in the farmer's language and advise them to contact their local Krishi Vigyan Kendra.
-7. Never guess or fabricate disease names, dosages, or pesticide names. Use only what is in the context."""
+7. Never guess or fabricate disease names, dosages, or pesticide names. Use only what is in the context.
+8. When answering from retrieved context, mention the source document name at the end in parentheses, e.g. "(Source: filename.pdf)". If multiple sources contributed, list all of them."""
 
 
 def _build_context(chunks: List[Dict[str, Any]]) -> str:
     lines = []
     for i, chunk in enumerate(chunks, 1):
-        text = chunk.get("chunk") or chunk.get("text", "")
+        text   = chunk.get("chunk") or chunk.get("text", "")
+        source = chunk.get("metadata", {}).get("source", "") or chunk.get("source", "")
         if text.strip():
-            lines.append(f"[{i}] {text.strip()}")
+            header = f"[{i}]" + (f" (Source: {source})" if source else "")
+            lines.append(f"{header}\n{text.strip()}")
     return "\n\n".join(lines) if lines else "No relevant context found."
 
 
@@ -139,22 +142,43 @@ def generate(query: str, chunks: List[Dict[str, Any]]) -> str:
     return answer
 
 
-def generate_direct(query: str, raw_text: str) -> str:
+def generate_direct(
+    query    : str,
+    raw_text : str,
+    history  : Optional[List[tuple]] = None,
+) -> str:
     """
     Answer query using full document text — no retrieval needed.
     Used for small documents that fit within Claude's context window.
+
+    Args:
+        query    : current user question
+        raw_text : full document text (capped at 60k chars)
+        history  : list of (user_query, assistant_answer) tuples — last N exchanges
     """
     gen = get_generator()
+
+    # Build conversation turns from history so Claude has session context
+    messages = []
+    if history:
+        for past_query, past_answer in history:
+            messages.append({"role": "user",      "content": [{"text": past_query}]})
+            messages.append({"role": "assistant",  "content": [{"text": past_answer}]})
+        logger.info(f"generate_direct: injecting {len(history)} prior exchange(s) into context")
+
+    # Current turn — document context included only in the current user message
     user_message = (
         f"Question: {query}\n\n"
         f"Full document context:\n{raw_text[:60000]}\n\n"
         f"Answer in the same language as the question. Plain prose only."
     )
+    messages.append({"role": "user", "content": [{"text": user_message}]})
+
     try:
         resp   = gen.client.converse(
             modelId=gen.model_id,
             system=[{"text": SYSTEM_PROMPT}],
-            messages=[{"role": "user", "content": [{"text": user_message}]}],
+            messages=messages,
             inferenceConfig={"maxTokens": 300, "temperature": 0.1},
         )
         answer = resp["output"]["message"]["content"][0]["text"].strip()

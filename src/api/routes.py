@@ -277,9 +277,12 @@ async def query(req: QueryRequest, request: Request):
         # Small doc path — full text directly to Claude, skip agent overhead
         from src.models.rag_generator import generate_direct as _generate_direct
         full_text = raw_store.get_all_text()
-        answer    = _generate_direct(req.query, full_text)
-        chunks    = [{"chunk": full_text[:2000], "score": 1.0}]  # synthetic chunk for eval
-        logger.info("Query served via direct context (small doc)")
+
+        # Inject last N exchanges so Claude has session memory on the direct path
+        history = _session_history.get(req.session_id, [])
+        answer  = _generate_direct(req.query, full_text, history=history)
+        chunks  = [{"chunk": full_text[:2000], "score": 1.0}]  # synthetic chunk for eval
+        logger.info(f"Query served via direct context (small doc, {len(history)} prior exchange(s))")
 
         # If Claude couldn't find the answer in the doc, fall back to ReAct agent (web search)
         _not_found_signals = ("not mentioned", "not found", "no information", "don't have",
@@ -293,6 +296,11 @@ async def query(req: QueryRequest, request: Request):
             )
             answer = f"The ingested document did not contain this information. Based on web sources:\n\n{web_answer}"
             logger.info(f"Fallback ReAct agent returned {len(chunks)} chunks")
+
+        # Update session history (only after final answer is known)
+        hist = _session_history.get(req.session_id, [])
+        hist.append((req.query, answer))
+        _session_history[req.session_id] = hist[-_MAX_SESSION_HISTORY:]
     else:
         # ReAct agent path — retriever → web search fallback → generate
         answer, chunks = agent_run(
@@ -487,6 +495,12 @@ async def feedback(req: FeedbackRequest):
 # ── Health check cache — SageMaker DescribeEndpoint takes ~1.5s, ALB fires
 # every 30s from 5 nodes with only 2 workers. Cache for 60s so health checks
 # respond in <5ms and don't block workers during ingest/query requests.
+# ── Session history for direct-context path (small docs bypass the agent) ─────
+# Keyed by session_id → list of (query, answer) tuples, capped at 5 exchanges.
+_session_history: dict = {}
+_MAX_SESSION_HISTORY = 5
+
+# ── Health check cache ────────────────────────────────────────────────────────
 _health_cache: dict = {}
 _HEALTH_CACHE_TTL = 60  # seconds
 

@@ -142,7 +142,7 @@ class VectorStore:
         top_ids = sorted(rrf, key=lambda i: rrf[i], reverse=True)[:k]
         logger.info(f"search: {len(rrf_ids)} retriever + {len(meta_ids)} metadata → top {len(top_ids)}")
 
-        return [
+        results = [
             {
                 "chunk"   : self.chunks[i]["text"],
                 "metadata": self.chunks[i],
@@ -150,6 +150,19 @@ class VectorStore:
             }
             for i in top_ids
         ]
+
+        # Log each retrieved chunk for full transparency in CloudWatch
+        for rank, r in enumerate(results, 1):
+            source = r["metadata"].get("source", "unknown")
+            lang   = r["metadata"].get("language", "?")
+            score  = r["score"]
+            preview = r["chunk"][:120].replace("\n", " ")
+            logger.info(
+                f"  Chunk #{rank} | source={source} | lang={lang} | "
+                f"score={score} | text={preview!r}"
+            )
+
+        return results
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
