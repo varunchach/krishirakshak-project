@@ -235,6 +235,26 @@ def provision_security_groups(ec2, project):
     return apigw_sg, alb_sg, api_sg
 
 
+def authorize_ui_to_alb(ec2, project):
+    """Allow Streamlit container to reach internal ALB directly (bypasses API Gateway 29s timeout)."""
+    alb_sg = _sg_id(ec2, f"{project}-alb-sg")
+    ui_sg  = _sg_id(ec2, f"{project}-ui-sg")
+    if not alb_sg or not ui_sg:
+        print("  Skipping ui→alb rule: SGs not found")
+        return
+    try:
+        ec2.authorize_security_group_ingress(
+            GroupId=alb_sg,
+            IpPermissions=[{"IpProtocol": "tcp", "FromPort": 80, "ToPort": 80,
+                            "UserIdGroupPairs": [{"GroupId": ui_sg}]}],
+        )
+        print(f"  Authorized ui-sg → alb-sg on port 80")
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "InvalidPermission.Duplicate":
+            raise
+        print(f"  ui-sg → alb-sg rule already exists")
+
+
 # ── 6. ALB ─────────────────────────────────────────────────────────────────────
 def provision_alb(elb, project, env, alb_sg):
     alb_name = f"{project}-alb"
@@ -386,7 +406,7 @@ def provision_streamlit(ecr, elb, ecs, ec2, project, env, exec_role_arn, task_ro
         else:
             raise
 
-    # Security group — allow port 8501 from internet
+    # Security group — allow port 80 (ALB) and 8501 (container) from internet
     ui_sg_name = f"{project}-ui-sg"
     ui_sg = _sg_id(ec2, ui_sg_name)
     if not ui_sg:
@@ -394,6 +414,7 @@ def provision_streamlit(ecr, elb, ecs, ec2, project, env, exec_role_arn, task_ro
                                           TagSpecifications=[{"ResourceType": "security-group", "Tags": TAGS}])
         ui_sg = resp["GroupId"]
         ec2.authorize_security_group_ingress(GroupId=ui_sg, IpPermissions=[
+            {"IpProtocol": "tcp", "FromPort": 80,   "ToPort": 80,   "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
             {"IpProtocol": "tcp", "FromPort": 8501, "ToPort": 8501, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
         ])
         print(f"  Created UI SG: {ui_sg}")
@@ -615,8 +636,9 @@ def main():
     ui_ecr_url, ui_alb_dns = provision_streamlit(
         ecr, elb, ecs, ec2, project, env,
         exec_arn, task_arn, cluster,
-        api_url=f"{invoke_url}/v1",
+        api_url=f"http://{alb_dns}/v1",  # internal ALB — no API Gateway 29s timeout
     )
+    authorize_ui_to_alb(ec2, project)
 
     print(f"""
 === Done ===
