@@ -160,7 +160,7 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             git fetch origin ${{ github.event.before }} --depth=1 2>/dev/null || true
-            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -E '^frontend/|^Dockerfile\.streamlit' | wc -l)
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -E '^frontend/|^Dockerfile\.streamlit|^infra/taskdef-ui' | wc -l)
             echo "changed=$([ $CHANGED -gt 0 ] && echo true || echo false)" >> $GITHUB_OUTPUT
           fi
 
